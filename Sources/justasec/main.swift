@@ -20,8 +20,11 @@ app.setActivationPolicy(.accessory)
 // 3. The handler calls exit(0) after printing termination diagnostic. This is
 //    safe because the handler runs on the main queue, not at signal-level context.
 //    Carbon hotkey and AudioToolbox sound resources are cleaned by process exit.
+// 4. atexit (registered below and by whisper-server) is invoked by exit(0) and
+//    terminates the child whisper-server process before host exit.
 signal(SIGINT, SIG_IGN)
 signal(SIGTERM, SIG_IGN)
+WhisperServerProcess.setupGlobalCleanup()
 
 let sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
 sigintSource.setEventHandler {

@@ -18,6 +18,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     })
 
     private var captureSession: (any AudioCaptureSessionProtocol)?
+    private var whisperServer: WhisperServerProcess?
 
     private lazy var hotkeyController: HotkeyController = {
         HotkeyController { [weak self] in
@@ -40,7 +41,10 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         do {
             try lifecycle.startupComplete()
-            fputs("justasec: ready\n", stderr)
+
+            try startWhisperServer()
+            fputs("justasec: whisper server started\n", stderr)
+
             startCapture()
             fputs("justasec: registering hotkey Control-Option-Space\n", stderr)
             if hotkeyController.register() {
@@ -48,8 +52,10 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             } else {
                 fputs("justasec: warning - hotkey registration failed\n", stderr)
             }
+            fputs("justasec: ready\n", stderr)
         } catch {
-            fputs("justasec: startup failed\n", stderr)
+            fputs("justasec: startup failed — \(error)\n", stderr)
+            lifecycle.fail()
         }
     }
 
@@ -58,6 +64,8 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         Task { @MainActor [weak self] in
             await self?.captureSession?.stop()
         }
+        whisperServer?.terminate()
+        whisperServer = nil
         fputs("justasec: terminated\n", stderr)
         AudioFeedback.dispose()
     }
@@ -96,6 +104,23 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             AudioFeedback.play(.trigger)
         } else {
             AudioFeedback.play(.busy)
+        }
+    }
+
+    private func startWhisperServer() throws {
+        let config = WhisperServerConfig()
+        let server = WhisperServerProcess(config: config)
+        try server.validate()
+        try server.launch()
+        self.whisperServer = server
+
+        Task {
+            let ready = await server.checkReadiness(timeout: 10.0)
+            if ready {
+                fputs("justasec: whisper server ready\n", stderr)
+            } else {
+                fputs("justasec: warning — whisper server not ready\n", stderr)
+            }
         }
     }
 
