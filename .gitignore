@@ -1,0 +1,24 @@
+# Swift Package Manager
+.build/
+.build-arm64/
+.build-x86_64/
+Packages/
+*.xcodeproj
+*.xcworkspace
+
+# App bundles
+*.app
+
+# Model files
+models/
+!models/.gitkeep
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Build artifacts
+derived-data/
+
