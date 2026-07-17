@@ -13,6 +13,9 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     ]
 
     private var lifecycle = LifecycleStateMachine()
+    private let snapshotEngine = SnapshotEngine(onError: { error in
+        fputs("justasec: pipeline error — \(error)\n", stderr)
+    })
 
     private var captureSession: (any AudioCaptureSessionProtocol)?
 
@@ -60,8 +63,11 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     }
 
     private func startCapture() {
+        let engine = snapshotEngine
         let session = AudioCaptureSession(
-            onSample: { _ in },
+            onSample: { payload in
+                Task { await engine.ingestPayload(payload) }
+            },
             onError: { error in
                 fputs("justasec: capture error: \(error)\n", stderr)
             },

@@ -172,10 +172,16 @@ extension AudioCaptureSession: SCStreamOutput {
         from desc: CMAudioFormatDescription
     ) -> AudioStreamFormat? {
         guard let asbd = desc.audioStreamBasicDescription else { return nil }
+        let isFloat = asbd.mFormatFlags & UInt32(kAudioFormatFlagIsFloat) != 0
+        let pcm: PCMFormat
+        if isFloat && asbd.mBitsPerChannel == 32 { pcm = .float32 }
+        else if !isFloat && asbd.mBitsPerChannel == 16 { pcm = .int16 }
+        else { pcm = .unknown }
         return AudioStreamFormat(
             sampleRate: asbd.mSampleRate,
             channelCount: asbd.mChannelsPerFrame,
-            bytesPerFrame: asbd.mBytesPerFrame
+            bytesPerFrame: asbd.mBytesPerFrame,
+            pcmFormat: pcm
         )
     }
 

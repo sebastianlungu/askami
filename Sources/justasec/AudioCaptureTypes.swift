@@ -7,15 +7,34 @@ public enum AudioSource: String, Sendable, Equatable, Codable {
     case systemAudio
 }
 
+public enum PCMFormat: UInt32, Sendable, Equatable {
+    case unknown = 0
+    case float32 = 32
+    case int16 = 16
+}
+
 public struct AudioStreamFormat: Sendable, Equatable {
     public let sampleRate: Float64
     public let channelCount: UInt32
     public let bytesPerFrame: UInt32
+    public let pcmFormat: PCMFormat
 
-    public init(sampleRate: Float64, channelCount: UInt32, bytesPerFrame: UInt32) {
+    public init(
+        sampleRate: Float64, channelCount: UInt32, bytesPerFrame: UInt32,
+        pcmFormat: PCMFormat = .unknown
+    ) {
         self.sampleRate = sampleRate
         self.channelCount = channelCount
         self.bytesPerFrame = bytesPerFrame
+        self.pcmFormat = pcmFormat
+    }
+
+    public var isFloat: Bool { pcmFormat == .float32 }
+    public var bitsPerChannel: UInt32 { pcmFormat.rawValue }
+
+    public var bytesPerSample: UInt32 {
+        guard channelCount > 0 else { return 0 }
+        return bytesPerFrame / channelCount
     }
 
     public var durationForByteCount: (_ byteCount: Int) -> TimeInterval {
