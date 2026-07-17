@@ -14,6 +14,8 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
 
     private var lifecycle = LifecycleStateMachine()
 
+    private var captureSession: (any AudioCaptureSessionProtocol)?
+
     private lazy var hotkeyController: HotkeyController = {
         HotkeyController { [weak self] in
             Task { @MainActor [weak self] in
@@ -36,6 +38,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         do {
             try lifecycle.startupComplete()
             fputs("justasec: ready\n", stderr)
+            startCapture()
             fputs("justasec: registering hotkey Control-Option-Space\n", stderr)
             if hotkeyController.register() {
                 fputs("justasec: hotkey registered\n", stderr)
@@ -49,8 +52,37 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         hotkeyController.unregister()
+        Task { @MainActor [weak self] in
+            await self?.captureSession?.stop()
+        }
         fputs("justasec: terminated\n", stderr)
         AudioFeedback.dispose()
+    }
+
+    private func startCapture() {
+        let session = AudioCaptureSession(
+            onSample: { _ in },
+            onError: { error in
+                fputs("justasec: capture error: \(error)\n", stderr)
+            },
+            onFormatChange: { format, source in
+                fputs("justasec: \(source.rawValue) format change: \(Int(format.sampleRate))Hz \(format.channelCount)ch\n", stderr)
+            }
+        )
+        self.captureSession = session
+
+        Task {
+            do {
+                try await session.start()
+                fputs("justasec: audio capture started\n", stderr)
+            } catch let error as AudioCaptureError {
+                fputs("justasec: capture failed to start - \(error)\n", stderr)
+                self.lifecycle.fail()
+            } catch {
+                fputs("justasec: capture failed to start - \(error.localizedDescription)\n", stderr)
+                self.lifecycle.fail()
+            }
+        }
     }
 
     private func handleHotkey() {
