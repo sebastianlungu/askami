@@ -1,7 +1,9 @@
+import AppKit
 import Foundation
 
-public struct JustasecApp {
-    public static let bundleIdentifier: String = "com.sebastianlungu.justasec"
+@MainActor
+public final class JustasecApp: NSObject, NSApplicationDelegate {
+    public static let bundleIdentifier = "com.sebastianlungu.justasec"
 
     private static let requiredTools: [(name: String, path: String, arg: String)] = [
         ("swift", "/usr/bin/swift", "--version"),
@@ -10,11 +12,52 @@ public struct JustasecApp {
         ("whisper-server", "/opt/homebrew/bin/whisper-server", "--help"),
     ]
 
-    public init() {}
+    private var lifecycle = LifecycleStateMachine()
+
+    private lazy var hotkeyController: HotkeyController = {
+        HotkeyController { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.handleHotkey()
+            }
+        }
+    }()
+
+    public override init() {
+        super.init()
+    }
 
     public func validateSystemDependencies() -> Bool {
         Self.requiredTools.allSatisfy { tool in
             checkToolAvailable(at: tool.path, with: tool.arg)
+        }
+    }
+
+    public func applicationDidFinishLaunching(_ notification: Notification) {
+        do {
+            try lifecycle.startupComplete()
+            fputs("justasec: ready\n", stderr)
+            fputs("justasec: registering hotkey Control-Option-Space\n", stderr)
+            if hotkeyController.register() {
+                fputs("justasec: hotkey registered\n", stderr)
+            } else {
+                fputs("justasec: warning - hotkey registration failed\n", stderr)
+            }
+        } catch {
+            fputs("justasec: startup failed\n", stderr)
+        }
+    }
+
+    public func applicationWillTerminate(_ notification: Notification) {
+        hotkeyController.unregister()
+        fputs("justasec: terminated\n", stderr)
+        AudioFeedback.dispose()
+    }
+
+    private func handleHotkey() {
+        if lifecycle.trigger() {
+            AudioFeedback.play(.trigger)
+        } else {
+            AudioFeedback.play(.busy)
         }
     }
 
@@ -29,6 +72,7 @@ public struct JustasecApp {
 
         do {
             try process.run()
+            pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
             return process.terminationStatus == 0
         } catch {
