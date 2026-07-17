@@ -1,4 +1,5 @@
 import Foundation
+import os.lock
 
 public enum LifecycleState: String, Sendable, Equatable {
     case startup
@@ -12,44 +13,63 @@ public enum StateTransitionError: Error, Equatable {
     case invalidTransition(from: LifecycleState, to: LifecycleState)
 }
 
-public struct LifecycleStateMachine: Sendable {
-    public private(set) var state: LifecycleState = .startup
+public final class LifecycleStateMachine: @unchecked Sendable {
+    private let lock = OSAllocatedUnfairLock(initialState: LifecycleState.startup)
+
+    public var state: LifecycleState {
+        lock.withLock { $0 }
+    }
 
     public var canTrigger: Bool { state == .ready }
 
     public init() {}
 
-    public mutating func startupComplete() throws {
-        try transition(from: [.startup, .failed], to: .ready)
+    public func startupComplete() throws {
+        try lock.withLock { current in
+            guard current == .startup || current == .failed else {
+                throw StateTransitionError.invalidTransition(from: current, to: .ready)
+            }
+            current = .ready
+        }
     }
 
     @discardableResult
-    public mutating func trigger() -> Bool {
-        guard state == .ready else { return false }
-        state = .processing
-        return true
-    }
-
-    public mutating func beginSpeaking() throws {
-        try transition(from: [.processing], to: .speaking)
-    }
-
-    public mutating func speakingComplete() throws {
-        try transition(from: [.speaking], to: .ready)
-    }
-
-    public mutating func fail() {
-        state = .failed
-    }
-
-    public mutating func reset() throws {
-        try transition(from: [.failed], to: .ready)
-    }
-
-    private mutating func transition(from allowed: Set<LifecycleState>, to newState: LifecycleState) throws {
-        guard allowed.contains(state) else {
-            throw StateTransitionError.invalidTransition(from: state, to: newState)
+    public func trigger() -> Bool {
+        lock.withLock { current in
+            guard current == .ready else { return false }
+            current = .processing
+            return true
         }
-        state = newState
+    }
+
+    public func beginSpeaking() throws {
+        try lock.withLock { current in
+            guard current == .processing else {
+                throw StateTransitionError.invalidTransition(from: current, to: .speaking)
+            }
+            current = .speaking
+        }
+    }
+
+    public func speakingComplete() throws {
+        try lock.withLock { current in
+            guard current == .speaking else {
+                throw StateTransitionError.invalidTransition(from: current, to: .ready)
+            }
+            current = .ready
+        }
+    }
+
+    public func fail() {
+        lock.withLock { $0 = .failed }
+    }
+
+    public func reset() throws {
+        try lock.withLock { current in
+            guard current == .failed else {
+                throw StateTransitionError.invalidTransition(from: current, to: .ready)
+            }
+            current = .ready
+        }
     }
 }

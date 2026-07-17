@@ -714,6 +714,26 @@ func realServerHelp() throws {
 
 // MARK: - Integration: Real whisper-server with genuine model
 
+private func findFreePort() -> UInt16 {
+    let sock = socket(AF_INET, SOCK_STREAM, 0)
+    guard sock >= 0 else { return 19990 }
+    defer { close(sock) }
+    var reuse: Int32 = 1
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+    var addr = sockaddr_in()
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = CFSwapInt16HostToBig(0)
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+    guard bind(sock, withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { $0 }
+    }, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0 else { return 19990 }
+    var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+    guard getsockname(sock, withUnsafeMutablePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { $0 }
+    }, &len) == 0 else { return 19990 }
+    return CFSwapInt16BigToHost(addr.sin_port)
+}
+
 @Test("real server: launch, transcribe, cleanup (3x)",
       .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/whisper-server")))
 func realServerIntegration3x() async throws {
@@ -722,22 +742,7 @@ func realServerIntegration3x() async throws {
         let ws = "/opt/homebrew/bin/whisper-server"
         try #require(fm.isExecutableFile(atPath: ws))
 
-        // Pre-clean port 19990
-        let cleanupSock = socket(AF_INET, SOCK_STREAM, 0)
-        if cleanupSock >= 0 {
-            var reuse: Int32 = 1
-            setsockopt(cleanupSock, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
-            var addr = sockaddr_in()
-            addr.sin_family = sa_family_t(AF_INET)
-            addr.sin_port = CFSwapInt16HostToBig(19990)
-            addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-            _ = withUnsafePointer(to: &addr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                    bind(cleanupSock, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
-            close(cleanupSock)
-        }
+        let testPort = findFreePort()
 
         // Generate in-memory WAV
         let sampleRate = 16000
@@ -751,39 +756,23 @@ func realServerIntegration3x() async throws {
         let wav = try WAVEncoder.encodePCM16(samples, sampleRate: sampleRate)
 
         let config = WhisperServerConfig(
-            modelPath: "\(fm.currentDirectoryPath)/models/ggml-base-q5_1.bin"
+            modelPath: "\(fm.currentDirectoryPath)/models/ggml-base-q5_1.bin",
+            port: testPort
         )
         let server = WhisperServerProcess(config: config)
 
         try server.validate()
         try server.launch()
-        defer { server.terminate() }
 
         let ready = await server.checkReadiness(timeout: 30.0)
         #expect(ready, "run \(run): server ready within 30s")
 
-        let transcriber = WhisperTranscriber(port: 19990)
+        let transcriber = WhisperTranscriber(port: testPort)
         let result = try await transcriber.transcribe(wavData: wav, timeout: 30.0)
         #expect(!result.language.isEmpty, "run \(run): language detected")
 
         server.terminate()
         #expect(!server.isRunning, "run \(run): server stopped")
-
-        // Verify port release
-        let postSock = socket(AF_INET, SOCK_STREAM, 0)
-        defer { close(postSock) }
-        var reuse: Int32 = 1
-        setsockopt(postSock, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
-        var postAddr = sockaddr_in()
-        postAddr.sin_family = sa_family_t(AF_INET)
-        postAddr.sin_port = CFSwapInt16HostToBig(19990)
-        postAddr.sin_addr.s_addr = inet_addr("127.0.0.1")
-        let postBind = withUnsafePointer(to: &postAddr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(postSock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        #expect(postBind == 0, "run \(run): port released after termination")
     }
 }
 

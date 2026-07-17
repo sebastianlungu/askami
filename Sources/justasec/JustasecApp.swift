@@ -12,18 +12,32 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         ("whisper-server", "/opt/homebrew/bin/whisper-server", "--help"),
     ]
 
-    private var lifecycle = LifecycleStateMachine()
+    private let lifecycle = LifecycleStateMachine()
     private let snapshotEngine = SnapshotEngine(onError: { error in
         fputs("justasec: pipeline error — \(error)\n", stderr)
     })
+    private let micSuppressionGate = MicSuppressionGate()
+    private let speechSynth = SpeechSynthesizerActor()
 
     private var captureSession: (any AudioCaptureSessionProtocol)?
     private var whisperServer: WhisperServerProcess?
+    private var startupTask: Task<Void, Never>?
+
+    private lazy var orchestrator: PipelineOrchestrator = {
+        PipelineOrchestrator(
+            stateMachine: lifecycle,
+            snapshotEngine: snapshotEngine,
+            transcriber: WhisperTranscriber(),
+            reasoner: OpenCodeClient(),
+            speech: speechSynth,
+            micGate: micSuppressionGate
+        )
+    }()
 
     private lazy var hotkeyController: HotkeyController = {
         HotkeyController { [weak self] in
             Task { @MainActor [weak self] in
-                self?.handleHotkey()
+                self?.orchestrator.handleTrigger()
             }
         }
     }()
@@ -39,28 +53,16 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        do {
-            try lifecycle.startupComplete()
-
-            try startWhisperServer()
-            fputs("justasec: whisper server started\n", stderr)
-
-            startCapture()
-            fputs("justasec: registering hotkey Control-Option-Space\n", stderr)
-            if hotkeyController.register() {
-                fputs("justasec: hotkey registered\n", stderr)
-            } else {
-                fputs("justasec: warning - hotkey registration failed\n", stderr)
-            }
-            fputs("justasec: ready\n", stderr)
-        } catch {
-            fputs("justasec: startup failed — \(error)\n", stderr)
-            lifecycle.fail()
+        startupTask = Task { @MainActor in
+            await performStartup()
         }
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
+        startupTask?.cancel()
+        startupTask = nil
         hotkeyController.unregister()
+        orchestrator.currentPipelineTask?.cancel()
         Task { @MainActor [weak self] in
             await self?.captureSession?.stop()
         }
@@ -70,10 +72,56 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         AudioFeedback.dispose()
     }
 
-    private func startCapture() {
+    private func performStartup() async {
+        do {
+            try startWhisperServer()
+        } catch {
+            await failStartup("Startup failed: \(error)")
+            return
+        }
+
+        guard await waitForWhisperReady() else {
+            await failStartup("Whisper server not ready.")
+            return
+        }
+
+        guard await startCapture() else {
+            await failStartup("Capture failed to start.")
+            return
+        }
+
+        guard registerHotkey() else {
+            await failStartup("Hotkey registration failed.")
+            return
+        }
+
+        do {
+            try lifecycle.startupComplete()
+        } catch {
+            await failStartup("State transition failed.")
+            return
+        }
+
+        fputs("justasec: ready\n", stderr)
+    }
+
+    private func failStartup(_ message: String) async {
+        fputs("justasec: startup failed — \(message)\n", stderr)
+        lifecycle.fail()
+        await speechSynth.speak("Startup failed.", language: "en")
+    }
+
+    private func waitForWhisperReady() async -> Bool {
+        guard let server = whisperServer else { return false }
+        return await server.checkReadiness(timeout: 10.0)
+    }
+
+    private func startCapture() async -> Bool {
         let engine = snapshotEngine
+        let gate = micSuppressionGate
         let session = AudioCaptureSession(
             onSample: { payload in
+                guard !gate.shouldDiscard(source: payload.source) else { return }
                 Task { await engine.ingestPayload(payload) }
             },
             onError: { error in
@@ -85,26 +133,27 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         )
         self.captureSession = session
 
-        Task {
-            do {
-                try await session.start()
-                fputs("justasec: audio capture started\n", stderr)
-            } catch let error as AudioCaptureError {
-                fputs("justasec: capture failed to start - \(error)\n", stderr)
-                self.lifecycle.fail()
-            } catch {
-                fputs("justasec: capture failed to start - \(error.localizedDescription)\n", stderr)
-                self.lifecycle.fail()
-            }
+        do {
+            try await session.start()
+            fputs("justasec: audio capture started\n", stderr)
+            return true
+        } catch let error as AudioCaptureError {
+            fputs("justasec: capture failed to start - \(error)\n", stderr)
+            return false
+        } catch {
+            fputs("justasec: capture failed to start - \(error.localizedDescription)\n", stderr)
+            return false
         }
     }
 
-    private func handleHotkey() {
-        if lifecycle.trigger() {
-            AudioFeedback.play(.trigger)
-        } else {
-            AudioFeedback.play(.busy)
+    private func registerHotkey() -> Bool {
+        fputs("justasec: registering hotkey Control-Option-Space\n", stderr)
+        guard hotkeyController.register() else {
+            fputs("justasec: hotkey registration failed\n", stderr)
+            return false
         }
+        fputs("justasec: hotkey registered\n", stderr)
+        return true
     }
 
     private func startWhisperServer() throws {
@@ -113,15 +162,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         try server.validate()
         try server.launch()
         self.whisperServer = server
-
-        Task {
-            let ready = await server.checkReadiness(timeout: 10.0)
-            if ready {
-                fputs("justasec: whisper server ready\n", stderr)
-            } else {
-                fputs("justasec: warning — whisper server not ready\n", stderr)
-            }
-        }
+        fputs("justasec: whisper server started\n", stderr)
     }
 
     private func checkToolAvailable(at path: String, with argument: String) -> Bool {

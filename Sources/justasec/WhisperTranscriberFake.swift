@@ -39,7 +39,7 @@ public final class WhisperServerProcessFake: WhisperServerProcessProtocol {
     }
 }
 
-public final class WhisperTranscriberFake {
+public final class WhisperTranscriberFake: @unchecked Sendable {
     public var stubResult: Result<WhisperTranscriptionResult, WhisperTranscriptionError> = .success(
         WhisperTranscriptionResult(text: "", language: "english")
     )
@@ -60,3 +60,5 @@ public final class WhisperTranscriberFake {
         }
     }
 }
+
+extension WhisperTranscriberFake: TranscriberProtocol {}

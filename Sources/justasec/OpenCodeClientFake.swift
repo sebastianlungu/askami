@@ -1,6 +1,6 @@
 import Foundation
 
-public final class OpenCodeClientFake {
+public final class OpenCodeClientFake: @unchecked Sendable {
     public var stubResult: Result<OpenCodeResult, OpenCodeError>
     public var capturedTranscript: String?
     public var capturedLanguage: String?
@@ -30,3 +30,5 @@ public final class OpenCodeClientFake {
         }
     }
 }
+
+extension OpenCodeClientFake: ReasonerProtocol {}
