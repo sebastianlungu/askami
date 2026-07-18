@@ -218,6 +218,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             onError: { [weak self] error in
                 fputs("justasec: capture error: \(error)\n", stderr)
                 Task { @MainActor in
+                    self?.orchestrator.currentPipelineTask?.cancel()
                     self?.captureSession = nil
                     self?.lifecycle.fail()
                     self?.dockStatusPresenter.transition(to: .error)

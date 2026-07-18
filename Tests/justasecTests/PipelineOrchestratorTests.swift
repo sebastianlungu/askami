@@ -1236,15 +1236,15 @@ func fatalLifecycleLeavesError() async throws {
     let orchestrator = PipelineOrchestrator(dependencies: deps)
     try orchestrator.stateMachine.startupComplete()
 
-    // Force lifecycle to failed state manually after pipeline starts
     orchestrator.handleTrigger()
     orchestrator.stateMachine.fail()
+    orchestrator.presenter.transition(to: .error)
 
     if let task = orchestrator.currentPipelineTask {
         await task.value
     }
-    // After fail, state should stay failed
     #expect(orchestrator.stateMachine.state == .failed)
+    #expect(orchestrator.presenter.currentStatus == .error)
 }
 
 @Test("stale pipeline callback after lifecycle fail does not transition to listening")
@@ -1259,11 +1259,13 @@ func staleCallbackNoListeningOverride() async throws {
 
     orchestrator.handleTrigger()
     orchestrator.stateMachine.fail()
+    orchestrator.presenter.transition(to: .error)
 
     if let task = orchestrator.currentPipelineTask {
         await task.value
     }
     #expect(orchestrator.stateMachine.state == .failed)
+    #expect(orchestrator.presenter.currentStatus == .error)
     let lastStatus = recorder.events.last { if case .status(_) = $0 { return true }; return false }
     if case .status(let s)? = lastStatus {
         #expect(s != .listening)
@@ -1471,6 +1473,7 @@ func fatalWithPresenterError() async throws {
         await task.value
     }
     #expect(orchestrator.stateMachine.state == .failed)
+    #expect(orchestrator.presenter.currentStatus == .error)
     let lastStatusInHistory = recorder.events.last { if case .status = $0 { return true }; return false }
     if case .status(let s)? = lastStatusInHistory {
         #expect(s != .listening)

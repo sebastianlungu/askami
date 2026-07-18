@@ -2,7 +2,7 @@
 
 Dock-resident macOS app: press Control-Option-Space to capture the last 30 seconds of
 microphone + system audio, transcribe locally, reason via OpenCode, and speak a
-concise answer aloud. The app appears in the Dock, Cmd-Tab, and menu bar.
+concise answer aloud. The app appears in the Dock, Cmd-Tab, and standard application menu.
 
 ---
 
@@ -50,7 +50,7 @@ open .build/justasec.app
 ```
 
 Or launch from Finder. The app appears in the Dock, Cmd-Tab app switcher, and
-the menu bar.
+standard application menu (no NSStatusItem/menu-bar icon).
 
 ## Stop
 

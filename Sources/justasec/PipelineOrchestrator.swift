@@ -49,10 +49,13 @@ public final class PipelineOrchestrator {
             let wavData = try await runner.snapshot(before: captureTime, timings: &timings)
             let transcription = try await runner.transcribe(wav: wavData, timings: &timings)
 
-            await MainActor.run { [self] in
+            let agentShouldProceed = await MainActor.run { [self] in
+                guard stateMachine.state != .failed else { return false }
                 presenter.transition(to: .agent)
                 deps.eventRecorder?.record(.status(.agent))
+                return true
             }
+            guard agentShouldProceed else { return }
             let answer = try await runner.reason(transcription, timings: &timings)
 
             let elapsed = runner.clock.now() - startTime
@@ -118,7 +121,10 @@ public final class PipelineOrchestrator {
             try await settleAndComplete()
         case .cancelled:
             await releaseSuppression(0)
-            await MainActor.run { [self] in stateMachine.fail() }
+            await MainActor.run { [self] in
+                presenter.transition(to: .error)
+                stateMachine.fail()
+            }
         case .failed:
             try await recoverFromSpeechFailure()
         }
@@ -169,7 +175,10 @@ public final class PipelineOrchestrator {
     nonisolated private func releaseAndFail() async {
         await deps.micGate.endSuppression(after: 0)
         deps.eventRecorder?.record(.suppressionEnd)
-        await MainActor.run { [self] in stateMachine.fail() }
+        await MainActor.run { [self] in
+            presenter.transition(to: .error)
+            stateMachine.fail()
+        }
     }
 
     nonisolated private func speakOnMainWithRecovery(errorMessage: String, settle: TimeInterval) async {
@@ -204,7 +213,10 @@ public final class PipelineOrchestrator {
             try await completeLifecycleAndListen()
         case .cancelled:
             await releaseSuppression(0)
-            await MainActor.run { [self] in stateMachine.fail() }
+            await MainActor.run { [self] in
+                presenter.transition(to: .error)
+                stateMachine.fail()
+            }
         }
     }
 

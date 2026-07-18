@@ -222,6 +222,26 @@ func reduceMotionEnableWhileListening() {
     #expect(presenter.pulseTask != nil)
 }
 
+@Test("reduce motion enabled while listening sets icon to cached full listening image and stops pulse")
+@MainActor
+func reduceMotionShowsFullListeningIcon() throws {
+    let presenter = DockStatusPresenter()
+    let fullListeningImage = try #require(presenter.fullImageCache[.listening])
+    let fullTiff = try #require(fullListeningImage.tiffRepresentation)
+
+    presenter.readReduceMotion = { false }
+    presenter.transition(to: .listening)
+    #expect(presenter.isPulsing)
+
+    presenter.readReduceMotion = { true }
+    presenter.handleReduceMotionChanged()
+    #expect(!presenter.isPulsing)
+    #expect(presenter.pulseTask == nil)
+
+    let iconTiff = try #require(NSApplication.shared.applicationIconImage?.tiffRepresentation)
+    #expect(iconTiff == fullTiff)
+}
+
 @Test("reduce motion changes outside listening have no pulse effect")
 @MainActor
 func reduceMotionChangesOutsideListening() {
