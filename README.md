@@ -1,8 +1,8 @@
 # justasec
 
-Headless macOS POC: press Control-Option-Space to capture the last 30 seconds of
+Dock-resident macOS app: press Control-Option-Space to capture the last 30 seconds of
 microphone + system audio, transcribe locally, reason via OpenCode, and speak a
-concise answer aloud. No UI, no Dock icon, no persistent audio files.
+concise answer aloud. The app appears in the Dock, Cmd-Tab, and menu bar.
 
 ---
 
@@ -40,20 +40,23 @@ Validates all four tools and downloads/verifies the model. Re-runnable.
 bash scripts/build.sh
 ```
 
-Produces `.build/justasec.app` — a locally (ad-hoc) signed, headless
-(`LSUIElement`) bundle with identifier `com.sebastianlungu.justasec`.
+Produces `.build/justasec.app` — a locally (ad-hoc) signed regular
+(`LSUIElement = false`) bundle with identifier `com.sebastianlungu.justasec`.
 
 ## Run
 
 ```bash
-.build/justasec.app/Contents/MacOS/justasec
+open .build/justasec.app
 ```
 
-Or open the bundle from Finder (no window appears).
+Or launch from Finder. The app appears in the Dock, Cmd-Tab app switcher, and
+the menu bar.
 
 ## Stop
 
-Ctrl-C or `kill <PID>` (SIGTERM). The app cleans up: terminates the
+- **Cmd-Q** or **Quit JustASec** from the menu.
+- **Dock icon → Quit**.
+- Ctrl-C or `kill <PID>` (SIGTERM). The app cleans up: terminates the
 whisper-server child, stops capture, disposes chime sounds, and exits.
 
 ## Permissions
@@ -76,8 +79,8 @@ app enters the `failed` state. To recover:
    re-enable.
 4. Restart the app.
 
-The hotkey (Control-Option-Space) uses the Carbon Event Manager and does NOT
-require Accessibility permission.
+The hotkey (Control-Option-Space, or a user-configured alternative) uses the
+Carbon Event Manager and does **NOT** require Accessibility permission.
 
 ## Lifecycle States
 
@@ -92,11 +95,50 @@ require Accessibility permission.
 Diagnostic messages are printed to stderr. No audio content, transcripts,
 prompts, answers, or credentials are ever logged.
 
+## Dock Status
+
+The Dock icon reflects the current pipeline phase with one of seven
+programmatically rendered SF Symbol images:
+
+| Phase | Symbol | Accent Color | Pulse |
+|-------|--------|-------------|-------|
+| `launching` | hourglass | Gray | No |
+| `listening` | mic.fill | Blue | Yes (pulse between full/subtle at ~2 Hz while Reduce Motion is off) |
+| `stt` | waveform | Purple | No |
+| `agent` | sparkle | Orange | No |
+| `success` | checkmark.circle.fill | Green | No |
+| `tts` | speaker.wave.2.fill | Teal | No |
+| `error` | exclamationmark.triangle.fill | Red | No |
+
+The `listening` pulse alternates between the full mic icon and a 60%-opacity
+version. When **System Settings → Accessibility → Display → Reduce Motion** is
+enabled, the pulse stops and the static full icon is shown. The app observes
+`NSWorkspace.accessibilityDisplayOptionsDidChangeNotification` to adapt live.
+
 ## Hotkey
 
-**Control-Option-Space** — triggers snapshot/transcribe/reason/speak pipeline
-when in `ready` state. Pressed again during `processing` or `speaking`: ignored
-(busy chime plays, no queueing).
+**Control-Option-Space** (default) — triggers snapshot/transcribe/reason/speak
+pipeline when in `ready` state. Pressed again during `processing` or `speaking`:
+ignored (busy chime plays, no queueing).
+
+The shortcut can be changed via the **Settings Panel**: click the Dock icon (or
+select the app in Cmd-Tab) to open the panel, click the shortcut button, and
+press the desired combination. The shortcut is persisted in `UserDefaults` and
+survives restart. If the new combination conflicts with a system shortcut or
+cannot be registered, the panel shows an error and rolls back to the previous
+value.
+
+## Settings Panel
+
+Click the Dock icon or select the app via Cmd-Tab to open the compact settings
+panel, which contains:
+
+- **Global Shortcut** — click to record a new hotkey combination.
+- **Quit JustASec** — terminates the app gracefully.
+- **Error label** — shown when shortcut registration fails.
+
+The panel does **not** require Accessibility permission (Carbon Event Manager
+registers the hotkey without AX API).
 
 ## Chimes
 
@@ -104,6 +146,10 @@ when in `ready` state. Pressed again during `processing` or `speaking`: ignored
 |-------|-------|
 | Trigger accepted | `/System/Library/Sounds/Tink.aiff` |
 | Trigger ignored (busy) | `/System/Library/Sounds/Basso.aiff` |
+| Pipeline success | `success-chime.wav` (bundled, ~0.175 s, 44.1 kHz mono ascending two-tone) played before TTS |
+
+The success chime is a custom bundled resource. Only one success chime is
+played per pipeline invocation.
 
 ## Privacy
 
@@ -115,6 +161,9 @@ when in `ready` state. Pressed again during `processing` or `speaking`: ignored
   contain no content.
 - The local Whisper server binds only to `127.0.0.1` (loopback). It is not
   exposed to the LAN.
+- No network telemetry, analytics, or status-item-based reporting is present.
+- The app uses `NSApplication.activationPolicy = .regular` (Dock app) and has
+  no `NSStatusItem`.
 
 ### Accepted Exceptions
 
@@ -200,8 +249,6 @@ The following issues are documented in `docs/hoff/debt/`:
 
 ### Out of Scope (Not Implemented)
 
-- Any visible UI, settings screen, menu-bar control, Dock interface, or
-  clipboard workflow.
 - Configurable lookback duration (fixed at 30 seconds).
 - Continuous transcription or automatic unsolicited answers.
 - Launch at login, system LaunchDaemon, installer, notarization, App Store
@@ -281,11 +328,16 @@ justasec/
 ├── scripts/
 │   ├── setup.sh               # Validate deps + download model
 │   ├── build.sh               # Release build + app bundle + ad-hoc sign
-│   └── Info.plist             # Bundle metadata (LSUIElement, usage descriptions)
+│   ├── Info.plist             # Bundle metadata (LSUIElement: false, usage descriptions)
+│   ├── AppIcon.icns           # Custom app icon
+│   ├── generate-icon.sh       # Icon generation helper
+│   ├── generate_icon.swift    # Icon generation source
+│   ├── generate-success-chime.swift  # Success chime generation source
+│   └── success-chime.wav      # Bundled success chime (~0.175 s, 44.1 kHz mono)
 ├── models/
 │   ├── .gitkeep
 │   └── ggml-base-q5_1.bin     # (git-ignored) Whisper model weights
-├── Sources/justasec/          # 23 source files, 0 UI
-├── Tests/justasecTests/       # 296 tests
+├── Sources/justasec/          # 30 source files, Dock-resident with settings panel
+├── Tests/justasecTests/       # 13 test files, ~400+ tests
 └── docs/hoff/debt/            # Known debt artifacts
 ```
