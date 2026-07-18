@@ -6,6 +6,7 @@ import os.lock
 @MainActor
 public final class JustasecApp: NSObject, NSApplicationDelegate {
     public static let bundleIdentifier = "com.sebastianlungu.justasec"
+    public static let preferredActivationPolicy: NSApplication.ActivationPolicy = .regular
 
     private static let requiredTools: [(name: String, path: String, arg: String)] = [
         ("swift", "/usr/bin/swift", "--version"),
