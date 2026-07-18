@@ -7,6 +7,7 @@ PRODUCT="justasec"
 BUNDLE_ID="com.sebastianlungu.justasec"
 BUILD_DIR=".build"
 ARCH="arm64-apple-macosx"
+MODEL="models/ggml-base-q5_1.bin"
 
 echo "=== justasec build ==="
 
@@ -20,16 +21,23 @@ if [ ! -f "$BINARY" ]; then
 fi
 echo "  Binary: $BINARY"
 
+if [ ! -f "$MODEL" ]; then
+    echo "  ERROR: Model not found at $MODEL. Run bash scripts/setup.sh first."
+    exit 1
+fi
+
 echo "--- Assembling app bundle ---"
 APP_BUNDLE="$BUILD_DIR/$PRODUCT.app"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
+mkdir -p "$APP_BUNDLE/Contents/Resources/models"
 
 cp "$BINARY" "$APP_BUNDLE/Contents/MacOS/$PRODUCT"
 cp scripts/Info.plist "$APP_BUNDLE/Contents/"
 cp scripts/AppIcon.icns "$APP_BUNDLE/Contents/Resources/"
 cp scripts/success-chime.wav "$APP_BUNDLE/Contents/Resources/"
+cp "$MODEL" "$APP_BUNDLE/Contents/Resources/models/"
 
 # Copy entitlements
 echo "  App bundle: $APP_BUNDLE"

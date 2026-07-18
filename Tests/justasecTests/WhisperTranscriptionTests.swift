@@ -85,12 +85,14 @@ func modelResolvedAbsolute() {
 
 @Test("resolved model path resolves relative path against cwd when no bundle")
 func modelResolvedRelative() {
-    let cfg = WhisperServerConfig()
-    let resolved = cfg.resolvedModelPath
-    let hasPrefixSlash = resolved.hasPrefix("/")
-    let hasSuffixPath = resolved.hasSuffix("/models/ggml-base-q5_1.bin")
-    #expect(hasPrefixSlash)
-    #expect(hasSuffixPath)
+    globalStateLock.withLock {
+        let cfg = WhisperServerConfig()
+        let resolved = cfg.resolvedModelPath
+        let hasPrefixSlash = resolved.hasPrefix("/")
+        let hasSuffixPath = resolved.hasSuffix("/models/ggml-base-q5_1.bin")
+        #expect(hasPrefixSlash)
+        #expect(hasSuffixPath)
+    }
 }
 
 @Test("resolved model path falls through when nothing matches")

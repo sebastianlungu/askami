@@ -42,6 +42,8 @@ bash scripts/build.sh
 
 Produces `.build/justasec.app` — a locally (ad-hoc) signed regular
 (`LSUIElement = false`) bundle with identifier `com.sebastianlungu.justasec`.
+The verified Whisper model is copied into the signed bundle so the app can be
+launched from Finder or installed in `/Applications` without a working-directory dependency.
 
 ## Run
 
