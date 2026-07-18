@@ -15,6 +15,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         ("whisper-server", "/opt/homebrew/bin/whisper-server", "--help"),
     ]
 
+    public let dockStatusPresenter = DockStatusPresenter()
     private let lifecycle = LifecycleStateMachine()
     private let snapshotEngine = SnapshotEngine(onError: { error in
         fputs("justasec: pipeline error — \(error)\n", stderr)
@@ -106,6 +107,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
+        dockStatusPresenter.cleanup()
         if !isTerminating {
             isTerminating = true
             startupTask?.cancel()
@@ -149,12 +151,14 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             return
         }
 
+        dockStatusPresenter.transition(to: .listening)
         fputs("justasec: ready\n", stderr)
     }
 
     private func failStartup(_ message: String) async {
         fputs("justasec: startup failed — \(message)\n", stderr)
         lifecycle.fail()
+        dockStatusPresenter.transition(to: .error)
         await speechSynth.speak("Startup failed.", language: "en")
     }
 
@@ -174,6 +178,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
                 Task { @MainActor in
                     self?.captureSession = nil
                     self?.lifecycle.fail()
+                    self?.dockStatusPresenter.transition(to: .error)
                     await self?.speechSynth.speak("Capture failed.", language: "en")
                 }
             },
