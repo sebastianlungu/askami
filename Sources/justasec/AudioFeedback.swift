@@ -10,25 +10,26 @@ public final class AudioFeedback: NSObject {
     public static let shared = AudioFeedback()
     private override init() { super.init() }
 
-    public func playSonicLogo() async {
+    public func playReadyChime() async {
         stop()
 
-        guard let url = Bundle.main.url(forResource: "sncf-sonic-logo", withExtension: "mp3") else {
-            fputs("justasec: sonic logo 'sncf-sonic-logo.mp3' not found in bundle\n", stderr)
+        guard let url = Bundle.main.url(forResource: "ready-chime", withExtension: "mp3") else {
+            fputs("justasec: ready-chime 'ready-chime.mp3' not found in bundle\n", stderr)
             return
         }
         let player: AVAudioPlayer
         do {
             player = try AVAudioPlayer(contentsOf: url)
         } catch {
-            fputs("justasec: sonic logo player init failed — \(error)\n", stderr)
+            fputs("justasec: ready-chime player init failed — \(error)\n", stderr)
             return
         }
+        player.volume = 0.3
         player.delegate = self
         self.player = player
         player.prepareToPlay()
         guard player.play() else {
-            fputs("justasec: sonic logo playback failed to start\n", stderr)
+            fputs("justasec: ready-chime playback failed to start\n", stderr)
             finishPlayback()
             return
         }
@@ -75,7 +76,7 @@ extension AudioFeedback: AVAudioPlayerDelegate {
             guard self.playerID == pid else { return }
             self.finishPlayback()
             if !flag {
-                fputs("justasec: sonic logo playback finished with error\n", stderr)
+                fputs("justasec: ready-chime playback finished with error\n", stderr)
             }
         }
     }

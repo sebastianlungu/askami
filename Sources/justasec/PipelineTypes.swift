@@ -177,7 +177,7 @@ extension PipelineDependencies {
             micGate: MicSuppressionGate = MicSuppressionGate(),
             log: @escaping LogFunction = { fputs($0, stderr) },
             playSoundEffect: @escaping PlaySoundEffect = { @MainActor in
-                await AudioFeedback.shared.playSonicLogo()
+                await AudioFeedback.shared.playReadyChime()
             }
         ) {
             self.clock = clock
