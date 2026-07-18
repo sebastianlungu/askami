@@ -106,6 +106,7 @@ public enum WhisperTranscriptionError: Error, Sendable, Equatable {
     case startupTimeout
     case inferenceTimeout
     case inferenceFailed(String)
+    case noSpeechDetected
     case unexpectedResponse(String)
     case hostNotLoopback(String)
 }

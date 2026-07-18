@@ -25,7 +25,7 @@ public final class DockStatusPresenter {
     private static let accentLineWidth: CGFloat = 4
     private static let accentInset: CGFloat = 8
 
-    private static let symbolNames: [DockStatus: String] = [
+    internal static let symbolNames: [DockStatus: String] = [
         .launching: "hourglass",
         .listening: "mic.fill",
         .stt: "waveform",
@@ -49,6 +49,10 @@ public final class DockStatusPresenter {
 
     public private(set) var currentStatus: DockStatus
     public private(set) var isPulsing = false
+    public let isDockPresentationEnabled: Bool
+
+    /// Called on every status transition so an external owner can update the menu-bar item.
+    public var onTransition: (@MainActor (DockStatus) -> Void)?
 
     // MARK: - Injectable Seams (for testing)
 
@@ -75,9 +79,11 @@ public final class DockStatusPresenter {
 
     public init(
         initialStatus: DockStatus = .launching,
-        notificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter
+        notificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter,
+        isDockPresentationEnabled: Bool = true
     ) {
         self.currentStatus = initialStatus
+        self.isDockPresentationEnabled = isDockPresentationEnabled
         self.reduceMotionNotificationCenter = notificationCenter
         self.fullImageCache = Self.generateAllImages()
         self.subtleListeningImage = Self.generateListeningSubtle()
@@ -105,6 +111,7 @@ public final class DockStatusPresenter {
         stopPulse()
         currentStatus = status
         applyCurrentStatus()
+        onTransition?(status)
     }
 
     public func cleanup() {
@@ -192,7 +199,7 @@ public final class DockStatusPresenter {
     // MARK: - Pulse
 
     private func startPulse() {
-        guard !readReduceMotion() else { return }
+        guard isDockPresentationEnabled, !readReduceMotion() else { return }
         stopPulse()
         isPulsing = true
         pulseTask = Task { @MainActor [weak self] in
@@ -221,6 +228,7 @@ public final class DockStatusPresenter {
     // MARK: - Apply
 
     private func applyCurrentStatus() {
+        guard isDockPresentationEnabled else { return }
         guard let image = fullImageCache[currentStatus] else { return }
         NSApplication.shared.applicationIconImage = image
         if currentStatus == .listening {
@@ -232,6 +240,7 @@ public final class DockStatusPresenter {
 
     internal func handleReduceMotionChanged() {
         onReduceMotionEvent()
+        guard isDockPresentationEnabled else { return }
         if readReduceMotion() {
             stopPulse()
             if currentStatus == .listening, let image = fullImageCache[.listening] {

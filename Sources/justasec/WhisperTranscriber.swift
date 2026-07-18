@@ -119,6 +119,10 @@ public struct WhisperTranscriber: Sendable {
                 "Text field too long: \(text.count) chars"
             )
         }
+        let cleanedText = cleanTranscript(text)
+        guard !cleanedText.isEmpty else {
+            throw WhisperTranscriptionError.noSpeechDetected
+        }
         let language: String
         if let lang = json["language"] as? String, !lang.isEmpty {
             guard lang.count < WhisperServerConfig.maxLanguageLength else {
@@ -137,6 +141,21 @@ public struct WhisperTranscriber: Sendable {
         } else {
             throw WhisperTranscriptionError.unexpectedResponse("Missing language field")
         }
-        return WhisperTranscriptionResult(text: text, language: language)
+        return WhisperTranscriptionResult(text: cleanedText, language: language)
+    }
+
+    public static func cleanTranscript(_ text: String) -> String {
+        text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !isAnnotation($0) }
+            .joined(separator: " ")
+    }
+
+    private static func isAnnotation(_ line: String) -> Bool {
+        let pairs: [(Character, Character)] = [("[", "]"), ("(", ")")]
+        if pairs.contains(where: { line.first == $0.0 && line.last == $0.1 }) {
+            return true
+        }
+        return line.allSatisfy { $0 == "♪" || $0.isWhitespace }
     }
 }

@@ -1,57 +1,82 @@
-import AudioToolbox
+@preconcurrency import AVFoundation
 import Foundation
 
-public enum ChimeType: Sendable {
-    case trigger
-    case busy
-    case success
-}
+@MainActor
+public final class AudioFeedback: NSObject {
+    private var player: AVAudioPlayer?
+    private var playerID: ObjectIdentifier?
+    private var continuation: CheckedContinuation<Void, Never>?
 
-public struct AudioFeedback: Sendable {
-    private static let triggerSound: SystemSoundID = {
-        let url = URL(fileURLWithPath: "/System/Library/Sounds/Tink.aiff")
-        var soundID = SystemSoundID(0)
-        AudioServicesCreateSystemSoundID(url as CFURL, &soundID)
-        return soundID
-    }()
+    public static let shared = AudioFeedback()
+    private override init() { super.init() }
 
-    private static let busySound: SystemSoundID = {
-        let url = URL(fileURLWithPath: "/System/Library/Sounds/Basso.aiff")
-        var soundID = SystemSoundID(0)
-        AudioServicesCreateSystemSoundID(url as CFURL, &soundID)
-        return soundID
-    }()
+    public func playSonicLogo() async {
+        stop()
 
-    private static let successSound: SystemSoundID = {
-        guard let url = Bundle.main.url(forResource: "success-chime", withExtension: "wav") else {
-            return 0
+        guard let url = Bundle.main.url(forResource: "sncf-sonic-logo", withExtension: "mp3") else {
+            fputs("justasec: sonic logo 'sncf-sonic-logo.mp3' not found in bundle\n", stderr)
+            return
         }
-        var soundID = SystemSoundID(0)
-        AudioServicesCreateSystemSoundID(url as CFURL, &soundID)
-        return soundID
-    }()
-
-    public static func play(_ chime: ChimeType) {
-        let soundID: SystemSoundID
-        switch chime {
-        case .trigger: soundID = triggerSound
-        case .busy: soundID = busySound
-        case .success: soundID = successSound
+        let player: AVAudioPlayer
+        do {
+            player = try AVAudioPlayer(contentsOf: url)
+        } catch {
+            fputs("justasec: sonic logo player init failed — \(error)\n", stderr)
+            return
         }
-        if soundID != 0 {
-            AudioServicesPlaySystemSound(soundID)
+        player.delegate = self
+        self.player = player
+        player.prepareToPlay()
+        guard player.play() else {
+            fputs("justasec: sonic logo playback failed to start\n", stderr)
+            finishPlayback()
+            return
+        }
+        let pid = ObjectIdentifier(player)
+        playerID = pid
+
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                if Task.isCancelled {
+                    self.finishPlayback()
+                    cont.resume()
+                } else if self.playerID != pid {
+                    cont.resume()
+                } else {
+                    self.continuation = cont
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in
+                self.stop()
+            }
         }
     }
 
-    public static func dispose() {
-        if triggerSound != 0 {
-            AudioServicesDisposeSystemSoundID(triggerSound)
+    private func finishPlayback() {
+        player = nil
+        playerID = nil
+        if let cont = continuation {
+            continuation = nil
+            cont.resume()
         }
-        if busySound != 0 {
-            AudioServicesDisposeSystemSoundID(busySound)
-        }
-        if successSound != 0 {
-            AudioServicesDisposeSystemSoundID(successSound)
+    }
+
+    public func stop() {
+        player?.stop()
+        finishPlayback()
+    }
+}
+
+extension AudioFeedback: AVAudioPlayerDelegate {
+    nonisolated public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let pid = ObjectIdentifier(player)
+        Task { @MainActor in
+            guard self.playerID == pid else { return }
+            self.finishPlayback()
+            if !flag {
+                fputs("justasec: sonic logo playback finished with error\n", stderr)
+            }
         }
     }
 }

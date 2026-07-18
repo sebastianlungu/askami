@@ -21,7 +21,7 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>LSUIElement</key>
-    <false/>
+    <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>justasec listens to the microphone to capture the latest 30 seconds of conversation for local transcription when triggered by a hotkey.</string>
     <key>NSSystemAudioUsageDescription</key>

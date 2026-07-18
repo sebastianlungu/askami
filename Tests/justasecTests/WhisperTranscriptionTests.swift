@@ -196,6 +196,7 @@ func whisperErrorEquality() {
     #expect(WhisperTranscriptionError.startupTimeout == .startupTimeout)
     #expect(WhisperTranscriptionError.inferenceTimeout == .inferenceTimeout)
     #expect(WhisperTranscriptionError.inferenceFailed("x") == .inferenceFailed("x"))
+    #expect(WhisperTranscriptionError.noSpeechDetected == .noSpeechDetected)
     #expect(WhisperTranscriptionError.unexpectedResponse("x") == .unexpectedResponse("x"))
     #expect(WhisperTranscriptionError.executableNotFound != .modelNotFound)
 }
@@ -343,13 +344,31 @@ func parseFallbackDetectedLanguage() throws {
     #expect(r.language == "spanish")
 }
 
-@Test("parse handles empty text")
-func parseEmptyText() throws {
+@Test("parse rejects empty text as no speech")
+func parseEmptyText() {
+    #expect(throws: WhisperTranscriptionError.noSpeechDetected) {
+        try WhisperTranscriber.parseResponse(data: """
+            {"text": "", "language": "english"}
+            """.data(using: .utf8)!)
+    }
+}
+
+@Test("parse removes background-music annotations and keeps speech")
+func parseRemovesMusicAnnotations() throws {
     let r = try WhisperTranscriber.parseResponse(data: """
-        {"text": "", "language": "english"}
+        {"text": " [MÚSICA DE FUNDO]\\n Como foi tão rápida?\\n [MÚSICA DE FUNDO]", "language": "portuguese"}
         """.data(using: .utf8)!)
-    #expect(r.text == "")
-    #expect(r.language == "english")
+    #expect(r.text == "Como foi tão rápida?")
+    #expect(r.language == "portuguese")
+}
+
+@Test("parse rejects annotation-only hallucination")
+func parseRejectsAnnotationOnlyTranscript() {
+    #expect(throws: WhisperTranscriptionError.noSpeechDetected) {
+        try WhisperTranscriber.parseResponse(data: """
+            {"text": " [...müzik çalıyor...]", "language": "turkish"}
+            """.data(using: .utf8)!)
+    }
 }
 
 @Test("parse throws on missing text")
@@ -845,13 +864,18 @@ func realServerIntegration3x() async throws {
 
         try server.validate()
         try server.launch()
+        defer { server.terminate() }
 
         let ready = await server.checkReadiness(timeout: 30.0)
         #expect(ready, "run \(run): server ready within 30s")
 
         let transcriber = WhisperTranscriber(port: testPort)
-        let result = try await transcriber.transcribe(wavData: wav, timeout: 30.0)
-        #expect(!result.language.isEmpty, "run \(run): language detected")
+        do {
+            let result = try await transcriber.transcribe(wavData: wav, timeout: 30.0)
+            #expect(!result.language.isEmpty, "run \(run): language detected")
+        } catch let error as WhisperTranscriptionError {
+            #expect(error == .noSpeechDetected, "run \(run): tone contains no speech")
+        }
 
         server.terminate()
         #expect(!server.isRunning, "run \(run): server stopped")

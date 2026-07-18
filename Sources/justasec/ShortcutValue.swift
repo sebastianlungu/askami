@@ -48,8 +48,8 @@ public struct ShortcutValue: Sendable, Equatable {
         case UInt32(kVK_End): return "\u{2198}"
         case UInt32(kVK_PageUp): return "\u{21DE}"
         case UInt32(kVK_PageDown): return "\u{21DF}"
-        case let f where f >= UInt32(kVK_F1) && f <= UInt32(kVK_F16):
-            return "F\(f - UInt32(kVK_F1) + 1)"
+        case let f where functionKeyNames[f] != nil:
+            return functionKeyNames[f]!
         default:
             return charForKeyCode(keyCode) ?? "?"
         }
@@ -70,6 +70,17 @@ private let modifierKeyCodes: Set<UInt32> = [
     UInt32(kVK_Shift), UInt32(kVK_RightShift),
     UInt32(kVK_Command), UInt32(kVK_RightCommand),
     UInt32(kVK_CapsLock), UInt32(kVK_Function),
+]
+
+private let functionKeyNames: [UInt32: String] = [
+    UInt32(kVK_F1): "F1", UInt32(kVK_F2): "F2",
+    UInt32(kVK_F3): "F3", UInt32(kVK_F4): "F4",
+    UInt32(kVK_F5): "F5", UInt32(kVK_F6): "F6",
+    UInt32(kVK_F7): "F7", UInt32(kVK_F8): "F8",
+    UInt32(kVK_F9): "F9", UInt32(kVK_F10): "F10",
+    UInt32(kVK_F11): "F11", UInt32(kVK_F12): "F12",
+    UInt32(kVK_F13): "F13", UInt32(kVK_F14): "F14",
+    UInt32(kVK_F15): "F15", UInt32(kVK_F16): "F16",
 ]
 
 private func charForKeyCode(_ code: UInt32) -> String? {

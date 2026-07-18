@@ -1,6 +1,7 @@
 import Testing
 import CoreMedia
 import Foundation
+import os.lock
 @testable import justasec
 
 private func makeTestWAV() -> Data {
@@ -16,9 +17,10 @@ private func runPipeline(_ orchestrator: PipelineOrchestrator) async {
     }
 }
 
-private final class ChimeRecorder: @unchecked Sendable {
-    var chimes: [ChimeType] = []
-    func record(_ chime: ChimeType) { chimes.append(chime) }
+private final class SoundEffectRecorder: Sendable {
+    private let _callCount = OSAllocatedUnfairLock(initialState: 0)
+    var callCount: Int { _callCount.withLock { $0 } }
+    func record() { _callCount.withLock { $0 += 1 } }
 }
 
 // MARK: - Exact once
@@ -73,9 +75,9 @@ func readyTriggerExactOnce() async throws {
     #expect(orchestrator.stateMachine.state == .ready)
 }
 
-// MARK: - Busy trigger ignored
+// MARK: - Busy trigger ignored (silent)
 
-@Test("trigger while processing is ignored with busy chime")
+@Test("trigger while processing is silently ignored")
 @MainActor
 func busyTriggerDuringProcessing() async throws {
     let snapshotFake = SnapshotEngineFake()
@@ -540,8 +542,9 @@ func errorSpeechNoContent() async throws {
 private let artifactExts: Set<String> = ["wav", "aiff", "caf", "mp3", "m4a", "pcm"]
 /// Content-keyword artifact names never permitted from app source.
 private let artifactKeywords: Set<String> = ["transcript", "prompt", "answer", "opencode_result"]
-/// Subdirectory/file prefixes that are accepted (build outputs, model, VCS, OpenCode session store).
-private let allowedPrefixes: Set<String> = [".build", ".git", "models", "Package.resolved", "opencode"]
+/// Subdirectory/file prefixes that are accepted (build outputs, model, VCS, OpenCode session store,
+/// intentional source assets).
+private let allowedPrefixes: Set<String> = [".build", ".git", "models", "Package.resolved", "opencode", "scripts"]
 
 private func scanForArtifacts(at url: URL) -> [String] {
     guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
@@ -550,7 +553,7 @@ private func scanForArtifacts(at url: URL) -> [String] {
         let name = fileURL.lastPathComponent
         let path = fileURL.path
         let lowerPath = path.lowercased()
-        // Skip accepted locations: build output, VCS, model files, OpenCode store
+        // Skip accepted locations: build output, VCS, model files, OpenCode store, intentional source assets
         if allowedPrefixes.contains(where: { lowerPath.contains("/\($0.lowercased())/") || lowerPath.contains("/\($0.lowercased())") || lowerPath.hasPrefix($0.lowercased()) }) {
             continue
         }
@@ -879,7 +882,7 @@ private func makeSuccessDeps(
     clock: ClockProtocol = ClockFake(),
     speech: SpeechSynthesizerProtocol = SpeechSynthesizerFake(),
     eventRecorder: EventRecorder? = nil,
-    playChime: @escaping @Sendable (ChimeType) -> Void = { _ in }
+    playSoundEffect: @escaping PlaySoundEffect = {}
 ) -> (snapshot: SnapshotEngineFake, transcriber: WhisperTranscriberFake, reasoner: OpenCodeClientFake, clock: ClockProtocol, deps: PipelineDependencies) {
     let snapshotFake = SnapshotEngineFake()
     snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
@@ -901,7 +904,7 @@ private func makeSuccessDeps(
         speech: speech,
         feedback: .init(
             clock: clock,
-            playChime: playChime
+            playSoundEffect: playSoundEffect
         ),
         eventRecorder: eventRecorder
     )
@@ -924,8 +927,7 @@ func exactSuccessEventOrder() async throws {
     #expect(events.contains(.status(.agent)))
     let suppressionIdx = events.firstIndex { $0 == .suppressionStart }
     let successIdx = events.firstIndex { $0 == .status(.success) }
-    let chimeIdx = events.firstIndex { $0 == .chime(.success) }
-    let sleepIdx = events.firstIndex { $0 == .sleep(0.3) }
+    let sonicLogoIdx = events.firstIndex { $0 == .sonicLogo }
     let ttsIdx = events.firstIndex { $0 == .status(.tts) }
     let speechBeginIdx = events.firstIndex { $0 == .speechBegin }
     let speechEndIdx = events.firstIndex { $0 == .speechResult(.completed) }
@@ -933,13 +935,12 @@ func exactSuccessEventOrder() async throws {
     let lifecycleReadyIdx = events.firstIndex { $0 == .lifecycleReady }
     let listeningIdx = events.firstIndex { $0 == .status(.listening) }
 
-    if let s = suppressionIdx, let su = successIdx, let c = chimeIdx,
-       let sl = sleepIdx, let t = ttsIdx, let sp = speechBeginIdx,
+    if let s = suppressionIdx, let su = successIdx, let sl = sonicLogoIdx,
+       let t = ttsIdx, let sp = speechBeginIdx,
        let se = speechEndIdx, let supe = suppressionEndIdx,
        let lr = lifecycleReadyIdx, let li = listeningIdx {
         #expect(s < su)
-        #expect(su < c)
-        #expect(c < sl)
+        #expect(su < sl)
         #expect(sl < t)
         #expect(t < sp)
         #expect(sp < se)
@@ -949,16 +950,16 @@ func exactSuccessEventOrder() async throws {
     } else {
         Issue.record("missing expected events: \(events)")
     }
-    let successChimeCount = events.filter { $0 == .chime(.success) }.count
-    #expect(successChimeCount == 1)
+    let sonicLogoCount = events.filter { $0 == .sonicLogo }.count
+    #expect(sonicLogoCount == 1)
     let speechEndCount = events.filter { $0 == .speechResult(.completed) }.count
     #expect(speechEndCount == 1)
     #expect(orchestrator.stateMachine.state == .ready)
 }
 
-@Test("suppression starts before success chime and chime before tts")
+@Test("suppression starts before sonic logo and logo before tts")
 @MainActor
-func suppressionChimeTTsOrder() async throws {
+func suppressionSonicLogoTTsOrder() async throws {
     let recorder = EventRecorder()
     let clockFake = ClockFake()
     let speechFake = SpeechSynthesizerFake()
@@ -969,19 +970,19 @@ func suppressionChimeTTsOrder() async throws {
 
     let events = recorder.events
     let suppressionIdx = events.firstIndex { $0 == .suppressionStart }
-    let chimeIdx = events.firstIndex { $0 == .chime(.success) }
+    let sonicLogoIdx = events.firstIndex { $0 == .sonicLogo }
     let ttsIdx = events.firstIndex { $0 == .status(.tts) }
-    if let s = suppressionIdx, let c = chimeIdx, let t = ttsIdx {
-        #expect(s < c)
-        #expect(c < t)
+    if let s = suppressionIdx, let sl = sonicLogoIdx, let t = ttsIdx {
+        #expect(s < sl)
+        #expect(sl < t)
     } else {
-        Issue.record("missing suppression/chime/tts events")
+        Issue.record("missing suppression/sonicLogo/tts events")
     }
 }
 
-@Test("exactly one success chime never after tts")
+@Test("exactly one sonic logo never after tts")
 @MainActor
-func successChimeOnceBeforeTTS() async throws {
+func sonicLogoOnceBeforeTTS() async throws {
     let recorder = EventRecorder()
     let clockFake = ClockFake()
     let speechFake = SpeechSynthesizerFake()
@@ -991,18 +992,222 @@ func successChimeOnceBeforeTTS() async throws {
     await runPipeline(orchestrator)
 
     let events = recorder.events
-    let successChimes = events.filter { $0 == .chime(.success) }
-    #expect(successChimes.count == 1)
+    let sonicLogos = events.filter { $0 == .sonicLogo }
+    #expect(sonicLogos.count == 1)
     let ttsIdx = events.firstIndex { $0 == .status(.tts) }
-    let chimeIdx = events.firstIndex { $0 == .chime(.success) }
-    if let c = chimeIdx, let t = ttsIdx {
-        #expect(c < t)
+    let sonicLogoIdx = events.firstIndex { $0 == .sonicLogo }
+    if let sl = sonicLogoIdx, let t = ttsIdx {
+        #expect(sl < t)
     }
 }
 
-@Test("sleep 0.3 recorded by clock fake")
+@Test("accepted trigger produces no sonic logo event")
 @MainActor
-func sleep300Recorded() async throws {
+func acceptedTriggerNoSonicLogo() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    let sfxRecorder = SoundEffectRecorder()
+    orchestrator.handleTrigger()
+
+    let sonicLogoCount = recorder.events.filter { $0 == .sonicLogo }.count
+    #expect(sfxRecorder.callCount == 0)
+    #expect(sonicLogoCount == 0)
+
+    if let task = orchestrator.currentPipelineTask {
+        await task.value
+    }
+}
+
+@Test("busy trigger at stt preserves current status silently")
+@MainActor
+func busyTriggerAtSTTPreservesStatus() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    speechFake.delay = 0.2
+    let sfxRecorder = SoundEffectRecorder()
+    let (_, _, _, _, deps) = makeSuccessDeps(
+        clock: clockFake, speech: speechFake, eventRecorder: recorder,
+        playSoundEffect: { sfxRecorder.record() }
+    )
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    orchestrator.handleTrigger()
+    #expect(orchestrator.presenter.currentStatus == .stt)
+    #expect(sfxRecorder.callCount == 0)
+
+    // Busy trigger should not change status and produce no sound
+    orchestrator.handleTrigger()
+    #expect(orchestrator.presenter.currentStatus == .stt)
+    #expect(sfxRecorder.callCount == 0)
+
+    if let task = orchestrator.currentPipelineTask {
+        await task.value
+    }
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
+// MARK: - Failure paths produce zero sonic-logo events
+
+@Test("silence error path produces zero sonic-logo events")
+@MainActor
+func silenceErrorZeroSonicLogo() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let sfxRecorder = SoundEffectRecorder()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(nil)
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake,
+                playSoundEffect: { sfxRecorder.record() }
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let sonicLogoCount = recorder.events.filter { $0 == .sonicLogo }.count
+    #expect(sonicLogoCount == 0)
+    #expect(sfxRecorder.callCount == 0)
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
+@Test("transcription error produces zero sonic-logo events")
+@MainActor
+func transcriptionErrorZeroSonicLogo() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let sfxRecorder = SoundEffectRecorder()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(makeTestWAV())
+    let transcriberFake = WhisperTranscriberFake()
+    transcriberFake.stubResult = .failure(.inferenceFailed("HTTP 500"))
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake,
+                playSoundEffect: { sfxRecorder.record() }
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let sonicLogoCount = recorder.events.filter { $0 == .sonicLogo }.count
+    #expect(sonicLogoCount == 0)
+    #expect(sfxRecorder.callCount == 0)
+}
+
+@Test("opencode error produces zero sonic-logo events")
+@MainActor
+func openCodeErrorZeroSonicLogo() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let sfxRecorder = SoundEffectRecorder()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(makeTestWAV())
+    let transcriberFake = WhisperTranscriberFake()
+    transcriberFake.stubResult = .success(
+        WhisperTranscriptionResult(text: "hello", language: "english")
+    )
+    let reasonerFake = OpenCodeClientFake()
+    reasonerFake.stubResult = .failure(.timeout)
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake,
+                playSoundEffect: { sfxRecorder.record() }
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let sonicLogoCount = recorder.events.filter { $0 == .sonicLogo }.count
+    #expect(sonicLogoCount == 0)
+    #expect(sfxRecorder.callCount == 0)
+}
+
+@Test("pipeline capture error produces zero sonic-logo events")
+@MainActor
+func pipelineCaptureErrorZeroSonicLogo() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let sfxRecorder = SoundEffectRecorder()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = nil
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake,
+                playSoundEffect: { sfxRecorder.record() }
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let sonicLogoCount = recorder.events.filter { $0 == .sonicLogo }.count
+    #expect(sonicLogoCount == 0)
+    #expect(sfxRecorder.callCount == 0)
+}
+
+// MARK: - Sonic logo event ordering
+
+@Test("sonic logo event is after success/suppression and before speechBegin")
+@MainActor
+func sonicLogoOrderSuccessSuppressionSpeechBegin() async throws {
     let recorder = EventRecorder()
     let clockFake = ClockFake()
     let speechFake = SpeechSynthesizerFake()
@@ -1011,40 +1216,227 @@ func sleep300Recorded() async throws {
     try orchestrator.stateMachine.startupComplete()
     await runPipeline(orchestrator)
 
-    #expect(clockFake.sleeps.contains(0.3))
-    #expect(clockFake.totalSlept >= 0.3)
+    let events = recorder.events
+    let suppressionIdx = events.firstIndex { $0 == .suppressionStart }
+    let successIdx = events.firstIndex { $0 == .status(.success) }
+    let sonicLogoIdx = events.firstIndex { $0 == .sonicLogo }
+    let speechBeginIdx = events.firstIndex { $0 == .speechBegin }
+
+    if let su = suppressionIdx, let s = successIdx, let sl = sonicLogoIdx, let sp = speechBeginIdx {
+        #expect(su < sl)
+        #expect(s < sl)
+        #expect(sl < sp)
+    }
 }
 
-@Test("busy trigger at stt preserves current status and plays busy chime")
+@Test("sonic logo never appears in error/recovery events")
 @MainActor
-func busyTriggerAtSTTPreservesStatus() async throws {
+func sonicLogoAbsentInErrorRecovery() async throws {
     let recorder = EventRecorder()
     let clockFake = ClockFake()
     let speechFake = SpeechSynthesizerFake()
-    speechFake.delay = 0.2
-    let chimeRecorder = ChimeRecorder()
+    let sfxRecorder = SoundEffectRecorder()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(nil)
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake,
+                playSoundEffect: { sfxRecorder.record() }
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    #expect(sfxRecorder.callCount == 0)
+    let sonicLogoCount = recorder.events.filter { $0 == .sonicLogo }.count
+    #expect(sonicLogoCount == 0)
+}
+
+@Test("exactly one sonic logo in success pipeline")
+@MainActor
+func exactlyOneSonicLogoInSuccess() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let sonicLogoCount = recorder.events.filter { $0 == .sonicLogo }.count
+    #expect(sonicLogoCount == 1)
+}
+
+@Test("sonic logo never appears after speech events")
+@MainActor
+func sonicLogoNeverAfterSpeech() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    let logoIndices = events.enumerated().filter { $0.element == .sonicLogo }.map { $0.offset }
+    let speechIndices = events.enumerated().filter { $0.element == .speechBegin || $0.element == .speechResult(.completed) }.map { $0.offset }
+    for sl in logoIndices {
+        for sp in speechIndices {
+            #expect(sl < sp)
+        }
+    }
+}
+
+// MARK: - Cancellation during sound effect
+
+@Test("pipeline cancellation during sound effect produces no sonic logo no TTS no speech")
+@MainActor
+func cancellationDuringSoundEffectNoSonicLogoOrTTS() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let sfxRecorder = SoundEffectRecorder()
     let (_, _, _, _, deps) = makeSuccessDeps(
         clock: clockFake, speech: speechFake, eventRecorder: recorder,
-        playChime: { chimeRecorder.record($0) }
+        playSoundEffect: {
+            sfxRecorder.record()
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            } catch {
+            }
+        }
+    )
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    orchestrator.handleTrigger()
+    #expect(orchestrator.currentPipelineTask != nil)
+
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    orchestrator.currentPipelineTask?.cancel()
+
+    if let task = orchestrator.currentPipelineTask {
+        await task.value
+    }
+
+    let events = recorder.events
+    #expect(!events.contains(.sonicLogo))
+    #expect(!events.contains(.status(.tts)))
+    #expect(!events.contains(.speechBegin))
+    #expect(sfxRecorder.callCount == 1)
+    let sonicLogoCount = events.filter { $0 == .sonicLogo }.count
+    #expect(sonicLogoCount == 0)
+}
+
+@Test("pipeline cancellation before sound effect produces no sonic logo no TTS")
+@MainActor
+func cancellationBeforeSoundEffectNoSonicLogo() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let sfxRecorder = SoundEffectRecorder()
+    let (_, _, _, _, deps) = makeSuccessDeps(
+        clock: clockFake, speech: speechFake, eventRecorder: recorder,
+        playSoundEffect: {
+            sfxRecorder.record()
+        }
+    )
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    orchestrator.handleTrigger()
+    orchestrator.currentPipelineTask?.cancel()
+
+    if let task = orchestrator.currentPipelineTask {
+        await task.value
+    }
+
+    let events = recorder.events
+    #expect(!events.contains(.sonicLogo))
+    #expect(!events.contains(.status(.tts)))
+    let sonicLogoCount = events.filter { $0 == .sonicLogo }.count
+    #expect(sonicLogoCount == 0)
+}
+
+// MARK: - Settle Evidence
+
+@Test("mic gate suppressing after speech, idle after settle")
+@MainActor
+func settleSuppressionEvidence() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let micGate = MicSuppressionGate()
+    let (_, _, _, _, deps) = makeSuccessDeps(
+        clock: clockFake, speech: speechFake, eventRecorder: recorder
+    )
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    let speechEndIdx = events.firstIndex { $0 == .speechResult(.completed) }
+    let supEndIdx = events.firstIndex { $0 == .suppressionEnd }
+    if let s = speechEndIdx, let e = supEndIdx {
+        #expect(s < e)
+    }
+    #expect(!micGate.isSuppressing)
+}
+
+// MARK: - Busy triggers silent
+
+@Test("busy trigger preserves status silently, one pipeline")
+@MainActor
+func busyTriggerPreservesStatusSilent() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    speechFake.delay = 0.3
+    let sfxRecorder = SoundEffectRecorder()
+    let (_, _, _, _, deps) = makeSuccessDeps(
+        clock: clockFake, speech: speechFake, eventRecorder: recorder,
+        playSoundEffect: { sfxRecorder.record() }
     )
     let orchestrator = PipelineOrchestrator(dependencies: deps)
     try orchestrator.stateMachine.startupComplete()
 
     orchestrator.handleTrigger()
     #expect(orchestrator.presenter.currentStatus == .stt)
-    #expect(chimeRecorder.chimes.filter { $0 == .trigger }.count == 1)
+    #expect(sfxRecorder.callCount == 0)
 
-    // Busy trigger should not change status
-    chimeRecorder.chimes.removeAll()
     orchestrator.handleTrigger()
+    #expect(sfxRecorder.callCount == 0)
     #expect(orchestrator.presenter.currentStatus == .stt)
-    #expect(chimeRecorder.chimes.filter { $0 == .busy }.count == 1)
 
     if let task = orchestrator.currentPipelineTask {
         await task.value
     }
+    #expect(speechFake.spokenTexts.count == 1)
     #expect(orchestrator.stateMachine.state == .ready)
+
+    let events = recorder.events
+    #expect(events.contains(.status(.stt)))
+    #expect(events.contains(.status(.agent)))
+    #expect(events.contains(.status(.success)))
+    #expect(events.contains(.status(.tts)))
+    #expect(events.contains(.status(.listening)))
 }
+
+// MARK: - Error display tests
 
 @Test("silence error shows error then returns to listening with min 1.5s")
 @MainActor
@@ -1272,26 +1664,7 @@ func staleCallbackNoListeningOverride() async throws {
     }
 }
 
-@Test("success chime never appears after speech events")
-@MainActor
-func successChimeNeverAfterSpeech() async throws {
-    let recorder = EventRecorder()
-    let clockFake = ClockFake()
-    let speechFake = SpeechSynthesizerFake()
-    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
-    let orchestrator = PipelineOrchestrator(dependencies: deps)
-    try orchestrator.stateMachine.startupComplete()
-    await runPipeline(orchestrator)
-
-    let events = recorder.events
-    let chimeIndices = events.enumerated().filter { $0.element == .chime(.success) }.map { $0.offset }
-    let speechIndices = events.enumerated().filter { $0.element == .speechBegin || $0.element == .speechResult(.completed) }.map { $0.offset }
-    for c in chimeIndices {
-        for s in speechIndices {
-            #expect(c < s)
-        }
-    }
-}
+// MARK: - No sensitive content in error events or logs
 
 @Test("no sensitive content in error events or logs")
 @MainActor
@@ -1349,32 +1722,7 @@ private final class ControlledSpeechFake: SpeechSynthesizerProtocol, @unchecked 
     func stop() {}
 }
 
-// MARK: - Settle Evidence
-
-@Test("mic gate suppressing after speech, idle after settle")
-@MainActor
-func settleSuppressionEvidence() async throws {
-    let recorder = EventRecorder()
-    let clockFake = ClockFake()
-    let speechFake = SpeechSynthesizerFake()
-    let micGate = MicSuppressionGate()
-    let (_, _, _, _, deps) = makeSuccessDeps(
-        clock: clockFake, speech: speechFake, eventRecorder: recorder
-    )
-    let orchestrator = PipelineOrchestrator(dependencies: deps)
-    try orchestrator.stateMachine.startupComplete()
-    await runPipeline(orchestrator)
-
-    let events = recorder.events
-    let speechEndIdx = events.firstIndex { $0 == .speechResult(.completed) }
-    let supEndIdx = events.firstIndex { $0 == .suppressionEnd }
-    if let s = speechEndIdx, let e = supEndIdx {
-        #expect(s < e)
-    }
-    #expect(!micGate.isSuppressing)
-}
-
-// MARK: - Speech Elapsed with Controlled Fake
+// MARK: - Settle Evidence with Controlled Fake
 
 @Test("speech elapsed <1.5 with controlled fake holds remainder")
 @MainActor
@@ -1408,48 +1756,10 @@ func speechElapsedOverMinNoExtraHoldControlled() async throws {
 
     // Speech took 2.0s (>1.5), no extra sleep needed
     let sleeps = clockFake.sleeps
-    let successSleep = sleeps.filter { abs($0 - 0.3) < 0.01 }
-    #expect(successSleep.count == 1)
+    // Sonic logo is awaited (no-op in test) so no sleep log either
+    // Only sleeps should be zero or absent
+    #expect(sleeps.isEmpty || sleeps.allSatisfy { $0 == 0 })
     #expect(orchestrator.stateMachine.state == .ready)
-}
-
-// MARK: - Busy Triggers
-
-@Test("busy trigger preserves status and plays one busy chime, one pipeline")
-@MainActor
-func busyTriggerPreservesStatus() async throws {
-    let recorder = EventRecorder()
-    let clockFake = ClockFake()
-    let speechFake = SpeechSynthesizerFake()
-    speechFake.delay = 0.3
-    let chimeRecorder = ChimeRecorder()
-    let (_, _, _, _, deps) = makeSuccessDeps(
-        clock: clockFake, speech: speechFake, eventRecorder: recorder,
-        playChime: { chimeRecorder.record($0) }
-    )
-    let orchestrator = PipelineOrchestrator(dependencies: deps)
-    try orchestrator.stateMachine.startupComplete()
-
-    orchestrator.handleTrigger()
-    #expect(orchestrator.presenter.currentStatus == .stt)
-    #expect(chimeRecorder.chimes.filter { $0 == .trigger }.count == 1)
-
-    orchestrator.handleTrigger()
-    #expect(chimeRecorder.chimes.filter { $0 == .busy }.count == 1)
-    #expect(chimeRecorder.chimes.filter { $0 == .trigger }.count == 1)
-
-    if let task = orchestrator.currentPipelineTask {
-        await task.value
-    }
-    #expect(speechFake.spokenTexts.count == 1)
-    #expect(orchestrator.stateMachine.state == .ready)
-
-    let events = recorder.events
-    #expect(events.contains(.status(.stt)))
-    #expect(events.contains(.status(.agent)))
-    #expect(events.contains(.status(.success)))
-    #expect(events.contains(.status(.tts)))
-    #expect(events.contains(.status(.listening)))
 }
 
 // MARK: - Fatal / Stale with Presenter Error
@@ -1557,8 +1867,6 @@ func cancelledErrorPathNoListening() async throws {
     try orchestrator.stateMachine.startupComplete()
     await runPipeline(orchestrator)
 
-    // Silence should produce error→listen. If speech somehow failed/cancelled,
-    // ensure the state machine is still ready (not stuck in processing)
     let lastStatus = recorder.events.last { if case .status = $0 { return true }; return false }
     if case .status(let s)? = lastStatus {
         #expect(s == .listening)

@@ -1,8 +1,9 @@
 # justasec
 
-Dock-resident macOS app: press Control-Option-Space to capture the last 30 seconds of
+Menu-bar-only macOS app: press Control-Option-Space to capture the last 30 seconds of
 microphone + system audio, transcribe locally, reason via OpenCode, and speak a
-concise answer aloud. The app appears in the Dock, Cmd-Tab, and standard application menu.
+concise answer aloud using local neural TTS. The app runs as a menu-bar item with
+status feedback and Settings/Quit.
 
 ---
 
@@ -17,7 +18,9 @@ concise answer aloud. The app appears in the Dock, Cmd-Tab, and standard applica
 
 All paths are hardcoded; the app will refuse to start if any tool is missing.
 
-## Model
+## Models
+
+### Whisper (transcription)
 
 **ggml-base-q5_1.bin** (multilingual, ~57 MB)
 
@@ -25,6 +28,22 @@ All paths are hardcoded; the app will refuse to start if any tool is missing.
 - Size: 59,707,625 bytes (verified before use)
 - SHA-256: `422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898`
 - Stored in `models/` (git-ignored)
+
+### Kokoro-82M (text-to-speech)
+
+**Kokoro-82M** via CoreML — ~99 MB, automatically downloaded on first use.
+
+- Runtime: Apple Silicon (macOS 15+) via CoreML
+- Source: `hexgrad/Kokoro-82M` ported by Jud [[kokoro-coreml](https://github.com/Jud/kokoro-coreml)]
+- Voice: `af_heart` (American English female, fixed — no voice selector)
+- Format: 24 kHz mono PCM float
+- Cache location: `~/Library/Application Support/com.sebastianlungu.justasec/models/kokoro/`
+- License: Apache 2.0
+- Speech output uses AVAudioEngine and is not looped back through system audio (`excludesCurrentProcessAudio`)
+
+First-use download (~99 MB) prints progress to stderr. Subsequent launches reuse the cached model — no network required.
+
+The package's synchronous downloader cannot be interrupted mid-stream. If the speaking task is cancelled during an ongoing download, the actor returns `.cancelled` promptly. The download, already started by the package, may complete in the background and cache the model for the next launch. The driver checks task cancellation before starting the download, before constructing the engine, and resumes the actor with `.cancelled` if cancelled.
 
 ## Setup
 
@@ -40,10 +59,22 @@ Validates all four tools and downloads/verifies the model. Re-runnable.
 bash scripts/build.sh
 ```
 
-Produces `.build/justasec.app` — a locally (ad-hoc) signed regular
-(`LSUIElement = false`) bundle with identifier `com.sebastianlungu.justasec`.
+Produces `.build/justasec.app` — a locally signed menu-bar-only
+(`LSUIElement = true`) bundle with identifier `com.sebastianlungu.justasec`.
 The verified Whisper model is copied into the signed bundle so the app can be
 launched from Finder or installed in `/Applications` without a working-directory dependency.
+Builds use the stable `JustASec Dev` identity from the login keychain so macOS
+permissions remain valid when the app is rebuilt.
+
+## Install
+
+```bash
+bash scripts/install.sh
+```
+
+This builds, stable-signs, and installs `/Applications/justasec.app`. The first
+migration from an ad-hoc or different identity resets stale TCC records and
+requires one new approval. Later installs preserve the same signing requirement.
 
 ## Run
 
@@ -51,15 +82,14 @@ launched from Finder or installed in `/Applications` without a working-directory
 open .build/justasec.app
 ```
 
-Or launch from Finder. The app appears in the Dock, Cmd-Tab app switcher, and
-standard application menu (no NSStatusItem/menu-bar icon).
+Or launch from Finder. The app lives in the menu bar with a persistent status icon.
+It does not appear in the Dock or Cmd-Tab app switcher.
 
 ## Stop
 
-- **Cmd-Q** or **Quit JustASec** from the menu.
-- **Dock icon → Quit**.
+- **Cmd-Q** or **Quit JustASec** from the menu-bar menu.
 - Ctrl-C or `kill <PID>` (SIGTERM). The app cleans up: terminates the
-whisper-server child, stops capture, disposes chime sounds, and exits.
+whisper-server child, stops capture, stops audio, and exits.
 
 ## Permissions
 
@@ -69,8 +99,8 @@ First run triggers **two** system dialogs:
 2. **Screen & System Audio Recording** — required for system audio loopback.
 
 These are macOS TCC (Transparency, Consent, and Control) permissions keyed to
-the bundle identifier `com.sebastianlungu.justasec`. Rebuilding the app
-(re-signing) changes the code digest and may require re-approval.
+the bundle identifier and stable `JustASec Dev` signing requirement. Rebuild
+with `bash scripts/install.sh` or the project `/sign` skill to preserve them.
 
 If permission is denied, spoken error "Startup failed." is announced and the
 app enters the `failed` state. To recover:
@@ -83,6 +113,21 @@ app enters the `failed` state. To recover:
 
 The hotkey (Control-Option-Space, or a user-configured alternative) uses the
 Carbon Event Manager and does **NOT** require Accessibility permission.
+
+## Sonic Logo
+
+The app plays the **SNCF sonic logo** (5.04 s, 44.1 kHz stereo MP3) exactly
+once on each successful pipeline invocation — after transcription and reasoning
+complete, and before Kokoro TTS starts. The logo is played with an async
+awaitable AVAudioPlayer that resolves only after playback finishes, adding
+~5 s to end-to-end response latency.
+
+- Error, recovery, startup, trigger-accepted, and busy-rejected paths are
+  silent — no sound is emitted.
+- The bundled resource at `scripts/sncf-sonic-logo.mp3` is validated by
+  SHA-256 (`734c2b87…`) at build time.
+- If the resource or player fails, a clear message is printed to stderr and
+  the pipeline continues to TTS without interruption.
 
 ## Lifecycle States
 
@@ -97,61 +142,67 @@ Carbon Event Manager and does **NOT** require Accessibility permission.
 Diagnostic messages are printed to stderr. No audio content, transcripts,
 prompts, answers, or credentials are ever logged.
 
-## Dock Status
+## Menu-Bar Status
 
-The Dock icon reflects the current pipeline phase with one of seven
-programmatically rendered SF Symbol images:
+The menu-bar icon reflects the current pipeline phase with one of seven
+SF Symbol monochrome template images:
 
 | Phase | Symbol | Accent Color | Pulse |
 |-------|--------|-------------|-------|
 | `launching` | hourglass | Gray | No |
-| `listening` | mic.fill | Blue | Yes (pulse between full/subtle at ~2 Hz while Reduce Motion is off) |
+| `listening` | mic.fill | Blue | No |
 | `stt` | waveform | Purple | No |
 | `agent` | sparkle | Orange | No |
 | `success` | checkmark.circle.fill | Green | No |
 | `tts` | speaker.wave.2.fill | Teal | No |
 | `error` | exclamationmark.triangle.fill | Red | No |
 
-The `listening` pulse alternates between the full mic icon and a 60%-opacity
-version. When **System Settings → Accessibility → Display → Reduce Motion** is
-enabled, the pulse stops and the static full icon is shown. The app observes
-`NSWorkspace.accessibilityDisplayOptionsDidChangeNotification` to adapt live.
+The app also shows two disabled rows in the menu-bar menu:
+**Status: <phase>** and **Shortcut: <current shortcut>** alongside the icon
+and tooltip. The `listening` pulse that previously animated the Dock icon is
+no longer visible; the menu-bar item renders a static icon.
 
 ## Hotkey
+
+A standard key plus at least one modifier from Control, Option, Shift, Command.
+Bare keys, modifier-only keys, Fn, and Caps Lock are rejected by the recorder.
+Unsupported media keys and system-reserved combinations may pass capture in
+the recorder but fail Carbon `RegisterEventHotKey`, showing an error and
+preserving the previous shortcut binding.
 
 **Control-Option-Space** (default) — triggers snapshot/transcribe/reason/speak
 pipeline when in `ready` state. Pressed again during `processing` or `speaking`:
 ignored (busy chime plays, no queueing).
 
-The shortcut can be changed via the **Settings Panel**: click the Dock icon (or
-select the app in Cmd-Tab) to open the panel, click the shortcut button, and
+The shortcut can be changed via the **Settings Panel**: click the menu-bar icon
+and select **Settings…** to open the panel, click the shortcut button, and
 press the desired combination. The shortcut is persisted in `UserDefaults` and
 survives restart. If the new combination conflicts with a system shortcut or
 cannot be registered, the panel shows an error and rolls back to the previous
-value.
+value. The menu-bar **Shortcut** row updates immediately on success and stays
+unchanged on failure or cancellation.
 
 ## Settings Panel
 
-Click the Dock icon or select the app via Cmd-Tab to open the compact settings
-panel, which contains:
+Click the menu-bar icon → **Settings…** to open the compact settings panel,
+which contains:
 
 - **Global Shortcut** — click to record a new hotkey combination.
 - **Quit JustASec** — terminates the app gracefully.
 - **Error label** — shown when shortcut registration fails.
 
+The menu also shows a **Shortcut: <current shortcut>** row that reflects the
+active hotkey. It updates immediately on success and is preserved on failure
+or cancellation.
+
 The panel does **not** require Accessibility permission (Carbon Event Manager
 registers the hotkey without AX API).
 
-## Chimes
+## Audio Feedback
 
-| Event | Sound |
-|-------|-------|
-| Trigger accepted | `/System/Library/Sounds/Tink.aiff` |
-| Trigger ignored (busy) | `/System/Library/Sounds/Basso.aiff` |
-| Pipeline success | `success-chime.wav` (bundled, ~0.175 s, 44.1 kHz mono ascending two-tone) played before TTS |
-
-The success chime is a custom bundled resource. Only one success chime is
-played per pipeline invocation.
+The only non-TTS audio feedback is the **SNCF sonic logo**, played once on
+successful pipelines. No trigger-accepted, busy, or error sounds are played.
+See [Sonic Logo](#sonic-logo) for details.
 
 ## Privacy
 
@@ -164,8 +215,8 @@ played per pipeline invocation.
 - The local Whisper server binds only to `127.0.0.1` (loopback). It is not
   exposed to the LAN.
 - No network telemetry, analytics, or status-item-based reporting is present.
-- The app uses `NSApplication.activationPolicy = .regular` (Dock app) and has
-  no `NSStatusItem`.
+- The app uses `NSApplication.activationPolicy = .accessory` (menu-bar app)
+  with a persistent `NSStatusItem` and `LSUIElement = true`.
 
 ### Accepted Exceptions
 
@@ -203,6 +254,20 @@ feeding back into the next capture. System audio capture continues during TTS.
 The app excludes its own system audio from the capture stream
 (`excludesCurrentProcessAudio`), so TTS is never looped back through the
 system-audio channel — only through acoustic air leakage to the microphone.
+
+## Text-to-Speech
+
+Speech is generated locally using **Kokoro-82M** via
+[kokoro-coreml](https://github.com/Jud/kokoro-coreml) (v0.11.2, Apache 2.0).
+
+- **Voice**: `af_heart` (American English female, hardcoded — no selector).
+- **Model download**: automatic on first use, cached at `~/Library/Application Support/com.sebastianlungu.justasec/models/kokoro/` (~99 MB). Reusable offline after first download.
+- **Playback**: synthesized audio is streamed through `AVAudioEngine` / `AVAudioPlayerNode` at 24 kHz. Playback starts as soon as the first chunk is synthesized.
+- **Concurrency**: one utterance at a time; concurrent speak requests return `.failed`. A 30-second timeout per utterance guards against hangs; the timeout returns `.failed`.
+- **Error handling**: model download/inference failures print to stderr and return `.failed`. The orchestrator recovers by speaking a fallback message.
+- **Language**: English only (kokoro-coreml includes an English G2P pipeline). The `language` parameter in the speech protocol is accepted but ignored.
+- **No system-voice fallback**: AVSpeechSynthesizer is not used.
+- **Compute**: CoreML inference runs on **CPU only** (`forceCPU: true`). On this hardware the ANE/E5RT accelerator emits a non-fatal shape-inference fallback (`"Failed to PropagateInputTensorShapes"`) while still producing correct audio on GPU; local probes confirmed CPU output is byte-identical and synthetically faster (RTF ~0.7× on M1 Pro) than the GPU path, with no fallback noise. This is an intentional policy, not a workaround — CPU inference is more predictable for a background menu-bar app.
 
 ### Model Substitution (NOT SUPPORTED)
 
@@ -318,28 +383,30 @@ justasec: opencode 5.678s
 justasec: time-to-speech 10.368s
 ```
 
-These are rough guidelines — actual latency depends on audio length, Whisper
-model (Base Q5), OpenCode provider availability, and system load.
+The SNCF sonic logo adds ~5.04 s (full MP3 duration) to the time-to-speech
+latency. These are rough guidelines — actual latency depends on audio length,
+Whisper model (Base Q5), OpenCode provider availability, and system load.
 
 ## Project Structure
 
 ```
 justasec/
-├── Package.swift              # SwiftPM executable target + test target
+├── Package.swift              # SwiftPM executable + test target; depends on kokoro-coreml v0.11.2
+├── Package.resolved           # Dependency lockfile (reproducible builds)
 ├── justasec.entitlements      # Sandbox entitlements (mic, network, loopback)
 ├── scripts/
 │   ├── setup.sh               # Validate deps + download model
-│   ├── build.sh               # Release build + app bundle + ad-hoc sign
-│   ├── Info.plist             # Bundle metadata (LSUIElement: false, usage descriptions)
+│   ├── build.sh               # Release build + app bundle + stable sign
+│   ├── install.sh             # Identity-aware install + TCC migration
+│   ├── Info.plist             # Bundle metadata (LSUIElement: true, usage descriptions)
 │   ├── AppIcon.icns           # Custom app icon
 │   ├── generate-icon.sh       # Icon generation helper
 │   ├── generate_icon.swift    # Icon generation source
-│   ├── generate-success-chime.swift  # Success chime generation source
-│   └── success-chime.wav      # Bundled success chime (~0.175 s, 44.1 kHz mono)
+│   └── sncf-sonic-logo.mp3    # SNCF sonic logo (5.04 s, 44.1 kHz stereo, validated at build)
 ├── models/
 │   ├── .gitkeep
 │   └── ggml-base-q5_1.bin     # (git-ignored) Whisper model weights
-├── Sources/justasec/          # 30 source files, Dock-resident with settings panel
+├── Sources/justasec/          # 30 source files, menu-bar-only with settings panel
 ├── Tests/justasecTests/       # 13 test files, ~400+ tests
 └── docs/hoff/debt/            # Known debt artifacts
 ```

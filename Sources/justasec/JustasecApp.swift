@@ -6,16 +6,24 @@ import os.lock
 @MainActor
 public final class JustasecApp: NSObject, NSApplicationDelegate {
     public static let bundleIdentifier = "com.sebastianlungu.justasec"
-    public static let preferredActivationPolicy: NSApplication.ActivationPolicy = .regular
+    public static let preferredActivationPolicy: NSApplication.ActivationPolicy = .accessory
 
     private static let requiredTools: [(name: String, path: String, arg: String)] = [
         ("swift", "/usr/bin/swift", "--version"),
         ("xcodebuild", "/usr/bin/xcodebuild", "-version"),
         ("opencode", "/opt/homebrew/bin/opencode", "--version"),
         ("whisper-server", "/opt/homebrew/bin/whisper-server", "--help"),
+        ("espeak-ng", "/opt/homebrew/bin/espeak-ng", "--version"),
     ]
 
-    public let dockStatusPresenter = DockStatusPresenter()
+    public let dockStatusPresenter = DockStatusPresenter(isDockPresentationEnabled: false)
+    internal lazy var statusItem: NSStatusItem = {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.setAccessibilityLabel("JustASec")
+        return item
+    }()
+    private lazy var statusLabelItem = NSMenuItem(title: "Status: Launching", action: nil, keyEquivalent: "")
+    private lazy var shortcutLabelItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let lifecycle = LifecycleStateMachine()
     private let snapshotEngine = SnapshotEngine(onError: { error in
         fputs("justasec: pipeline error — \(error)\n", stderr)
@@ -63,7 +71,9 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             initialShortcut: hotkeyController.currentShortcut,
             onReplace: { [weak self] shortcut in
                 guard let self else { return false }
-                return hotkeyController.replaceShortcut(with: shortcut)
+                let success = hotkeyController.replaceShortcut(with: shortcut)
+                if success { updateShortcutLabel() }
+                return success
             },
             onTerminate: { NSApp.terminate(nil) }
         )
@@ -80,15 +90,13 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        setupMenu()
+        setupStatusItem()
+        dockStatusPresenter.onTransition = { [weak self] status in
+            self?.updateStatusItem(for: status)
+        }
         startupTask = Task { @MainActor in
             await performStartup()
         }
-    }
-
-    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        settingsPanelController.showPanel()
-        return true
     }
 
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -99,7 +107,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         startupTask = nil
         hotkeyController.unregister()
         orchestrator.currentPipelineTask?.cancel()
-        AudioFeedback.dispose()
+        AudioFeedback.shared.stop()
 
         let server = whisperServer
         whisperServer = nil
@@ -137,7 +145,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             startupTask?.cancel()
             hotkeyController.unregister()
             orchestrator.currentPipelineTask?.cancel()
-            AudioFeedback.dispose()
+            AudioFeedback.shared.stop()
             whisperServer?.forceTerminate()
             whisperServer = nil
             captureSession = nil
@@ -145,22 +153,53 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         fputs("justasec: terminated\n", stderr)
     }
 
-    private func setupMenu() {
-        let mainMenu = NSMenu()
-        let appMenuItem = NSMenuItem()
-        mainMenu.addItem(appMenuItem)
+    private func setupStatusItem() {
+        statusLabelItem.isEnabled = false
+        shortcutLabelItem.isEnabled = false
+        updateShortcutLabel()
 
-        let appMenu = NSMenu()
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settingsItem.keyEquivalentModifierMask = .command
+
         let quitItem = NSMenuItem(
             title: "Quit JustASec",
             action: #selector(NSApp.terminate(_:)),
             keyEquivalent: "q"
         )
         quitItem.keyEquivalentModifierMask = .command
-        appMenu.addItem(quitItem)
-        appMenuItem.submenu = appMenu
 
-        NSApp.mainMenu = mainMenu
+        let menu = NSMenu()
+        menu.addItem(statusLabelItem)
+        menu.addItem(shortcutLabelItem)
+        menu.addItem(settingsItem)
+        menu.addItem(.separator())
+        menu.addItem(quitItem)
+        statusItem.menu = menu
+
+        updateStatusItem(for: dockStatusPresenter.currentStatus)
+    }
+
+    internal func updateShortcutLabel() {
+        shortcutLabelItem.title = "Shortcut: \(hotkeyController.currentShortcut.displayString)"
+    }
+
+    @objc private func openSettings() {
+        settingsPanelController.showPanel()
+    }
+
+    private func updateStatusItem(for status: DockStatus) {
+        let name = DockStatusPresenter.symbolNames[status] ?? "questionmark"
+        let img = NSImage(systemSymbolName: name, accessibilityDescription: status.rawValue)
+        img?.isTemplate = true
+        let cfg = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+        statusItem.button?.image = img?.withSymbolConfiguration(cfg)
+        statusItem.button?.toolTip = "JustASec — \(status.rawValue)"
+        statusItem.button?.setAccessibilityLabel("JustASec, \(status.rawValue)")
+        statusLabelItem.title = "Status: \(status.rawValue)"
     }
 
     private func performStartup() async {
@@ -245,7 +284,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     }
 
     private func registerHotkey() -> Bool {
-        fputs("justasec: registering hotkey Control-Option-Space\n", stderr)
+        fputs("justasec: registering hotkey \(hotkeyController.currentShortcut.displayString)\n", stderr)
         guard hotkeyController.register() else {
             fputs("justasec: hotkey registration failed\n", stderr)
             return false

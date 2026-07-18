@@ -9,7 +9,6 @@ guard appDelegate.validateSystemDependencies() else {
 
 let app = NSApplication.shared
 app.delegate = appDelegate
-app.setActivationPolicy(JustasecApp.preferredActivationPolicy)
 
 // Signal handling invariant:
 // 1. signal(SIG_IGN) prevents default termination before the dispatch sources

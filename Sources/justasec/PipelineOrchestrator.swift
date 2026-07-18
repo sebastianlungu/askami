@@ -21,13 +21,9 @@ public final class PipelineOrchestrator {
 
     public func handleTrigger() {
         guard stateMachine.canTrigger else {
-            deps.playChime(.busy)
-            deps.eventRecorder?.record(.chime(.busy))
             return
         }
 
-        deps.playChime(.trigger)
-        deps.eventRecorder?.record(.chime(.trigger))
         stateMachine.trigger()
         presenter.transition(to: .stt)
         deps.eventRecorder?.record(.status(.stt))
@@ -98,10 +94,9 @@ public final class PipelineOrchestrator {
             presenter.transition(to: .success)
             deps.eventRecorder?.record(.status(.success))
         }
-        deps.playChime(.success)
-        deps.eventRecorder?.record(.chime(.success))
-        try await deps.clock.sleep(seconds: 0.3)
-        deps.eventRecorder?.record(.sleep(0.3))
+        await deps.playSoundEffect()
+        try Task.checkCancellation()
+        deps.eventRecorder?.record(.sonicLogo)
         await MainActor.run { [self] in
             presenter.transition(to: .tts)
             deps.eventRecorder?.record(.status(.tts))

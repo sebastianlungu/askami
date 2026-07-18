@@ -1,7 +1,6 @@
 import Foundation
 import CoreMedia
 import os.lock
-@preconcurrency import AVFoundation
 
 // MARK: - Protocol definitions for dependency injection
 
@@ -82,6 +81,10 @@ public struct TimingSnapshot: Sendable, Equatable {
     }
 }
 
+// MARK: - Sound effect player
+
+public typealias PlaySoundEffect = @Sendable () async -> Void
+
 // MARK: - Log function type
 
 public typealias LogFunction = @Sendable (String) -> Void
@@ -92,7 +95,7 @@ public enum PipelineEvent: Sendable, Equatable {
     case status(DockStatus)
     case suppressionStart
     case suppressionEnd
-    case chime(ChimeType)
+    case sonicLogo
     case sleep(TimeInterval)
     case speechBegin
     case speechResult(SpeechResult)
@@ -125,7 +128,7 @@ public struct PipelineDependencies: Sendable {
     public let clock: ClockProtocol
     public let micGate: MicSuppressionGate
     public let log: LogFunction
-    public let playChime: @Sendable (ChimeType) -> Void
+    public let playSoundEffect: PlaySoundEffect
     public let eventRecorder: EventRecorder?
 
     public init(
@@ -141,7 +144,7 @@ public struct PipelineDependencies: Sendable {
         self.clock = feedback.clock
         self.micGate = feedback.micGate
         self.log = feedback.log
-        self.playChime = feedback.playChime
+        self.playSoundEffect = feedback.playSoundEffect
         self.eventRecorder = eventRecorder
     }
 }
@@ -167,18 +170,20 @@ extension PipelineDependencies {
         public let clock: ClockProtocol
         public let micGate: MicSuppressionGate
         public let log: LogFunction
-        public let playChime: @Sendable (ChimeType) -> Void
+        public let playSoundEffect: PlaySoundEffect
 
         public init(
             clock: ClockProtocol = SystemClock(),
             micGate: MicSuppressionGate = MicSuppressionGate(),
             log: @escaping LogFunction = { fputs($0, stderr) },
-            playChime: @escaping @Sendable (ChimeType) -> Void = { AudioFeedback.play($0) }
+            playSoundEffect: @escaping PlaySoundEffect = { @MainActor in
+                await AudioFeedback.shared.playSonicLogo()
+            }
         ) {
             self.clock = clock
             self.micGate = micGate
             self.log = log
-            self.playChime = playChime
+            self.playSoundEffect = playSoundEffect
         }
     }
 }
@@ -249,34 +254,6 @@ public final class SpeechSynthesizerFake: SpeechSynthesizerProtocol, @unchecked 
     }
 
     public func stop() {}
-}
-
-// MARK: - TestSpeechDriver (injectable delegate seam)
-
-public final class TestSpeechDriver: SpeechDriverProtocol, @unchecked Sendable {
-    public weak var delegate: AVSpeechSynthesizerDelegate?
-    public var capturedUtterance: AVSpeechUtterance?
-    public var stopCallCount = 0
-
-    public init() {}
-
-    public func speak(_ utterance: AVSpeechUtterance) {
-        capturedUtterance = utterance
-    }
-
-    @discardableResult
-    public func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool {
-        stopCallCount += 1
-        return true
-    }
-
-    public func fireDidFinish() {
-        delegate?.speechSynthesizer?(AVSpeechSynthesizer(), didFinish: AVSpeechUtterance(string: ""))
-    }
-
-    public func fireDidCancel() {
-        delegate?.speechSynthesizer?(AVSpeechSynthesizer(), didCancel: AVSpeechUtterance(string: ""))
-    }
 }
 
 // MARK: - ClockFake

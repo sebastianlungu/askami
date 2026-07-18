@@ -1,5 +1,6 @@
 import Testing
 import CoreMedia
+import CoreAudio
 import Foundation
 @testable import justasec
 
@@ -163,6 +164,98 @@ func appStoresProtocolType() {
         onSample: { _ in }, onError: { _ in }
     )
     #expect(session != nil)
+}
+
+@Test("capture extracts audio from a non-contiguous sample buffer")
+func captureExtractsNonContiguousAudio() throws {
+    let expected = Data([0, 1, 2, 3, 4, 5, 6, 7])
+    let sampleBuffer = try makeNonContiguousAudioSampleBuffer(data: expected)
+
+    #expect(AudioCaptureSession.extractAudioData(from: sampleBuffer) == expected)
+}
+
+@Test("capture minimizes the unused screen stream")
+@MainActor
+func captureMinimizesUnusedScreenStream() {
+    let config = AudioCaptureSession.makeConfiguration()
+
+    #expect(config.width == 2)
+    #expect(config.height == 2)
+    #expect(config.queueDepth == 1)
+    #expect(CMTimeGetSeconds(config.minimumFrameInterval) == 1)
+    #expect(config.capturesAudio)
+    #expect(!config.captureMicrophone)
+}
+
+private func makeNonContiguousAudioSampleBuffer(data: Data) throws -> CMSampleBuffer {
+    var blockBuffer: CMBlockBuffer?
+    try #require(CMBlockBufferCreateEmpty(
+        allocator: kCFAllocatorDefault,
+        capacity: 2,
+        flags: 0,
+        blockBufferOut: &blockBuffer
+    ) == kCMBlockBufferNoErr)
+    let block = try #require(blockBuffer)
+
+    for chunk in [data.prefix(4), data.suffix(4)] {
+        let offset = CMBlockBufferGetDataLength(block)
+        try #require(CMBlockBufferAppendMemoryBlock(
+            block,
+            memoryBlock: nil,
+            length: chunk.count,
+            blockAllocator: kCFAllocatorDefault,
+            customBlockSource: nil,
+            offsetToData: 0,
+            dataLength: chunk.count,
+            flags: 0
+        ) == kCMBlockBufferNoErr)
+        try chunk.withUnsafeBytes { bytes in
+            try #require(CMBlockBufferReplaceDataBytes(
+                with: bytes.baseAddress!,
+                blockBuffer: block,
+                offsetIntoDestination: offset,
+                dataLength: chunk.count
+            ) == kCMBlockBufferNoErr)
+        }
+    }
+
+    var asbd = AudioStreamBasicDescription(
+        mSampleRate: 48_000,
+        mFormatID: kAudioFormatLinearPCM,
+        mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+        mBytesPerPacket: 4,
+        mFramesPerPacket: 1,
+        mBytesPerFrame: 4,
+        mChannelsPerFrame: 1,
+        mBitsPerChannel: 32,
+        mReserved: 0
+    )
+    var formatDescription: CMAudioFormatDescription?
+    try #require(CMAudioFormatDescriptionCreate(
+        allocator: kCFAllocatorDefault,
+        asbd: &asbd,
+        layoutSize: 0,
+        layout: nil,
+        magicCookieSize: 0,
+        magicCookie: nil,
+        extensions: nil,
+        formatDescriptionOut: &formatDescription
+    ) == noErr)
+
+    var sampleBuffer: CMSampleBuffer?
+    try #require(CMAudioSampleBufferCreateWithPacketDescriptions(
+        allocator: kCFAllocatorDefault,
+        dataBuffer: block,
+        dataReady: true,
+        makeDataReadyCallback: nil,
+        refcon: nil,
+        formatDescription: try #require(formatDescription),
+        sampleCount: 2,
+        presentationTimeStamp: .zero,
+        packetDescriptions: nil,
+        sampleBufferOut: &sampleBuffer
+    ) == noErr)
+    return try #require(sampleBuffer)
 }
 
 // MARK: - Lifecycle Sequencing Tests (via Fake)

@@ -11,7 +11,7 @@ public struct OpenCodeConfig: Sendable {
 
     public init(
         executablePath: String = "/opt/homebrew/bin/opencode",
-        model: String = "opencode/deepseek-v4-flash-free",
+        model: String = "opencode-go/deepseek-v4-flash",
         timeout: TimeInterval = 30.0,
         maxAnswerChars: Int = 2000,
         maxSentences: Int = 2,

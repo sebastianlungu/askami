@@ -8,7 +8,7 @@ import Foundation
 func openCodeConfigDefaults() {
     let cfg = OpenCodeConfig()
     #expect(cfg.executablePath == "/opt/homebrew/bin/opencode")
-    #expect(cfg.model == "opencode/deepseek-v4-flash-free")
+    #expect(cfg.model == "opencode-go/deepseek-v4-flash")
     #expect(cfg.timeout == 30.0)
     #expect(cfg.maxInputBytes == 50_000)
     #expect(cfg.maxAnswerChars == 2000)
@@ -109,6 +109,13 @@ func openCodePromptSaysNoOverride() {
     #expect(prompt.contains("untrusted"))
 }
 
+@Test("prompt permits web research for current information")
+func openCodePromptPermitsWebResearch() {
+    let prompt = OpenCodeClient.makePrompt(transcript: "What happened today?")
+    #expect(prompt.contains("web search"))
+    #expect(prompt.contains("current information"))
+}
+
 @Test("prompt says no markdown preamble ai mention")
 func openCodePromptSaysNoMarkdown() {
     let prompt = OpenCodeClient.makePrompt(transcript: "")
@@ -133,23 +140,24 @@ func openCodePromptAsksOneOrTwoSentences() {
 
 // MARK: - Language in Prompt
 
-@Test("prompt embeds explicit language when provided")
-func openCodePromptExplicitLanguage() {
+@Test("prompt treats detected language as a hint")
+func openCodePromptLanguageHint() {
     let prompt = OpenCodeClient.makePrompt(transcript: "test", language: "french")
-    #expect(prompt.contains("Answer in french."))
+    #expect(prompt.contains("detected french"))
+    #expect(prompt.contains("language of the latest question"))
+    #expect(!prompt.contains("Answer in french."))
 }
 
 @Test("prompt uses same-language fallback when language nil")
 func openCodePromptSameLanguageFallback() {
     let prompt = OpenCodeClient.makePrompt(transcript: "test", language: nil)
-    #expect(prompt.contains("same language"))
-    #expect(!prompt.contains("Answer in ") || prompt.contains("Answer in the same language"))
+    #expect(prompt.contains("language of the latest question"))
 }
 
 @Test("prompt uses same-language fallback when language empty")
 func openCodePromptEmptyLanguageFallback() {
     let prompt = OpenCodeClient.makePrompt(transcript: "test", language: "")
-    #expect(prompt.contains("same language"))
+    #expect(prompt.contains("language of the latest question"))
 }
 
 // MARK: - Injection Resistance
@@ -241,7 +249,7 @@ func openCodeArgvPureAndFormat() {
 func openCodeArgvPinnedModel() {
     let cfg = OpenCodeConfig()
     let args = ["run", "--pure", "--model", cfg.model, "--format", "json"]
-    #expect(args[args.firstIndex(of: "--model")! + 1] == "opencode/deepseek-v4-flash-free")
+    #expect(args[args.firstIndex(of: "--model")! + 1] == "opencode-go/deepseek-v4-flash")
 }
 
 @Test("process arguments do NOT contain transcript content")
@@ -422,8 +430,8 @@ func openCodeParserRealWorldShape() {
 
 // MARK: - Full Response Parsing
 
-@Test("parseResponse succeeds and carries language through")
-func openCodeParseResponseSuccess() throws {
+@Test("parseResponse detects the answer language instead of carrying input language through")
+func openCodeParseResponseDetectsAnswerLanguage() throws {
     let stream = """
     {"type":"text","part":{"type":"text","text":"The capital of France is Paris."}}
     """
@@ -432,7 +440,19 @@ func openCodeParseResponseSuccess() throws {
         language: "french"
     )
     #expect(result.answer == "The capital of France is Paris.")
-    #expect(result.language == "french")
+    #expect(result.language == "en")
+}
+
+@Test("parseResponse detects Portuguese answer language")
+func openCodeParseResponseDetectsPortuguese() throws {
+    let stream = """
+    {"type":"text","part":{"type":"text","text":"A capital de Portugal é Lisboa."}}
+    """
+    let result = try OpenCodeClient.parseResponse(
+        data: stream.data(using: .utf8)!,
+        language: "english"
+    )
+    #expect(result.language == "pt")
 }
 
 @Test("parseResponse falls back to detected language")
@@ -747,32 +767,21 @@ func openCodeNoisyChildMemoryBound() async throws {
     #expect(accumulator.exceeded)
 }
 
-// MARK: - Deny-All Permissions
+// MARK: - Web-Only Permissions
 
-@Test("denyAllPermissionJSON denies all built-in tools")
-func openCodeDenyAllJSON() throws {
-    let json = OpenCodeClient.denyAllPermissionJSON
+@Test("webOnlyPermissionJSON allows web tools and denies everything else")
+func openCodeWebOnlyJSON() throws {
+    let json = OpenCodeClient.webOnlyPermissionJSON
     let data = json.data(using: .utf8)!
     let parsed = try JSONSerialization.jsonObject(with: data) as! [String: String]
     #expect(parsed["*"] == "deny")
-    #expect(parsed["bash"] == "deny")
-    #expect(parsed["read"] == "deny")
-    #expect(parsed["edit"] == "deny")
-    #expect(parsed["glob"] == "deny")
-    #expect(parsed["grep"] == "deny")
-    #expect(parsed["webfetch"] == "deny")
-    #expect(parsed["task"] == "deny")
-    #expect(parsed["skill"] == "deny")
-    #expect(parsed["lsp"] == "deny")
-    #expect(parsed["websearch"] == "deny")
-    #expect(parsed["write"] == "deny")
-    // No permissions set to allow or ask
-    for value in parsed.values {
-        #expect(value == "deny")
-    }
+    #expect(parsed["webfetch"] == "allow")
+    #expect(parsed["websearch"] == "allow")
+    #expect(parsed.count == 3)
+    #expect(!parsed.values.contains("ask"))
 }
 
-@Test("process environment includes OPENCODE_PERMISSION deny-all")
+@Test("process environment includes OPENCODE_PERMISSION web-only")
 func openCodeEnvPermissionSet() throws {
     try #require(FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode"))
     let client = OpenCodeClient()
@@ -781,15 +790,15 @@ func openCodeEnvPermissionSet() throws {
     proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/opencode")
     proc.arguments = ["run", "--pure", "--model", client.config.model, "--format", "json"]
     var env = ProcessInfo.processInfo.environment
-    env["OPENCODE_PERMISSION"] = OpenCodeClient.denyAllPermissionJSON
+    env["OPENCODE_PERMISSION"] = OpenCodeClient.webOnlyPermissionJSON
     proc.environment = env
     #expect(proc.environment?.keys.contains("OPENCODE_PERMISSION") == true)
-    #expect(proc.environment!["OPENCODE_PERMISSION"] == OpenCodeClient.denyAllPermissionJSON)
+    #expect(proc.environment!["OPENCODE_PERMISSION"] == OpenCodeClient.webOnlyPermissionJSON)
 }
 
 @Test("permission env var does not contain transcript or prompt content")
 func openCodeEnvPermissionNoTranscript() {
-    let envValue = OpenCodeClient.denyAllPermissionJSON
+    let envValue = OpenCodeClient.webOnlyPermissionJSON
     #expect(!envValue.contains("transcript"))
     #expect(!envValue.contains("UNTRUSTED_TRANSCRIPT_START"))
     #expect(!envValue.contains("hello world"))
@@ -799,7 +808,7 @@ func openCodeEnvPermissionNoTranscript() {
     #expect(envValue.contains("\"deny\""))
 }
 
-@Test("allowlist env: sentinel secrets excluded, known credential prefixes preserved, deny-all set")
+@Test("allowlist env: secrets excluded, provider credentials preserved, web search enabled")
 func openCodeAllowlistEnv() throws {
     let env = OpenCodeClient.buildChildEnv()
     // Allowlist excludes arbitrary sentinel keys
@@ -812,8 +821,8 @@ func openCodeAllowlistEnv() throws {
     #expect(env["OPENCODE_CONFIG_CONTENT"] == nil, "OPENCODE_CONFIG_CONTENT must be excluded")
     #expect(env["OPENCODE_CONFIG"] == nil, "OPENCODE_CONFIG must be excluded")
     #expect(env["OPENCODE_UNKNOWN_MALICIOUS"] == nil, "unknown OPENCODE_* keys must be excluded")
-    // deny-all OPENCODE_PERMISSION is force-set after filtering
-    #expect(env["OPENCODE_PERMISSION"] == OpenCodeClient.denyAllPermissionJSON)
+    #expect(env["OPENCODE_PERMISSION"] == OpenCodeClient.webOnlyPermissionJSON)
+    #expect(env["OPENCODE_ENABLE_EXA"] == "1")
     // Runtime essentials preserved
     #expect(env["HOME"] != nil, "HOME must be in allowlist")
     #expect(env["PATH"] != nil, "PATH must be in allowlist")
@@ -862,9 +871,9 @@ func openCodeAdversarialNDJSONNoToolExecution() async throws {
     // Capture raw NDJSON events
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/opencode")
-    proc.arguments = ["run", "--pure", "--model", "opencode/deepseek-v4-flash-free", "--format", "json"]
+    proc.arguments = ["run", "--pure", "--model", OpenCodeConfig().model, "--format", "json"]
     var env = ProcessInfo.processInfo.environment
-    env["OPENCODE_PERMISSION"] = OpenCodeClient.denyAllPermissionJSON
+    env["OPENCODE_PERMISSION"] = OpenCodeClient.webOnlyPermissionJSON
     proc.environment = env
 
     let inPipe = Pipe()
@@ -1083,7 +1092,7 @@ func openCodeRealModelAvailable() throws {
     try proc.run()
     proc.waitUntilExit()
     let models = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    #expect(models.contains("opencode/deepseek-v4-flash-free"))
+    #expect(models.contains("opencode-go/deepseek-v4-flash"))
 }
 
 @Test("real opencode: harmless integration with English transcript via stdin",
@@ -1189,7 +1198,7 @@ func openCodeEnvSentinelExcluded() throws {
 
     // Verify sentinel is also excluded when constructing manually
     var full = ProcessInfo.processInfo.environment
-    full["OPENCODE_PERMISSION"] = OpenCodeClient.denyAllPermissionJSON
+    full["OPENCODE_PERMISSION"] = OpenCodeClient.webOnlyPermissionJSON
     full[sentinelKey] = sentinelValue
     // Re-run allowlist filtering
     // (This tests that a sentinel in the manual path would also be caught)

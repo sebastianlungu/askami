@@ -553,23 +553,59 @@ func panelQuitButtonAction() {
 
 // MARK: - Menu Tests
 
-@Test("JustasecApp sets up menu with Cmd-Q Quit item")
+@Test("JustasecApp status item menu has Quit with Cmd-Q")
 @MainActor
 func appMenuHasCmdQ() {
     let app = JustasecApp()
     app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: nil))
 
-    let mainMenu = NSApp.mainMenu
-    #expect(mainMenu != nil)
-    let appMenuItem = mainMenu?.item(at: 0)
-    #expect(appMenuItem != nil)
-    let appMenu = appMenuItem?.submenu
-    #expect(appMenu != nil)
-    let quitItem = appMenu?.item(at: 0)
+    let menu = app.statusItem.menu
+    #expect(menu != nil)
+    let quitItem = menu?.item(withTitle: "Quit JustASec")
     #expect(quitItem != nil)
     #expect(quitItem?.keyEquivalent == "q")
     #expect(quitItem?.keyEquivalentModifierMask == .command)
     #expect(quitItem?.action == #selector(NSApp.terminate(_:)))
+}
+
+@Test("Menu has disabled Shortcut row")
+@MainActor
+func menuHasShortcutRow() {
+    let app = JustasecApp()
+    app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: nil))
+    guard let menu = app.statusItem.menu else { #expect(Bool(false)); return }
+    let shortcutItems = menu.items.filter { $0.title.hasPrefix("Shortcut:") }
+    #expect(shortcutItems.count == 1)
+    #expect(!shortcutItems[0].isEnabled)
+    #expect(shortcutItems[0].action == nil)
+}
+
+@Test("Shortcut row shows default shortcut initially")
+@MainActor
+func shortcutRowShowsDefault() {
+    let app = JustasecApp()
+    app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: nil))
+    let expected = "Shortcut: \u{2303}\u{2325}Space"
+    let item = app.statusItem.menu?.item(withTitle: expected)
+    #expect(item != nil)
+    #expect(item?.keyEquivalent == "")
+}
+
+@Test("Shortcut row is between Status and Settings in menu")
+@MainActor
+func shortcutRowPosition() {
+    let app = JustasecApp()
+    app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: nil))
+    guard let menu = app.statusItem.menu else { #expect(Bool(false)); return }
+    let statusIndex = menu.items.firstIndex { $0.title.hasPrefix("Status:") }
+    let shortcutIndex = menu.items.firstIndex { $0.title.hasPrefix("Shortcut:") }
+    let settingsIndex = menu.items.firstIndex { $0.title == "Settings\u{2026}" }
+    guard let si = statusIndex, let sci = shortcutIndex, let sei = settingsIndex else {
+        #expect(Bool(false), "missing menu items")
+        return
+    }
+    #expect(sci > si)
+    #expect(sci < sei)
 }
 
 // MARK: - JustasecApp Panel Wiring Tests
