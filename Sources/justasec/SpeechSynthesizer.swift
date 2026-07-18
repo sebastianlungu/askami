@@ -51,7 +51,7 @@ extension AVSpeechSynthesizer: SpeechDriverProtocol {}
 
 private enum SpeechState {
     case idle
-    case speaking(id: UUID, continuation: CheckedContinuation<Void, Never>)
+    case speaking(id: UUID, continuation: CheckedContinuation<SpeechResult, Never>)
 }
 
 @MainActor
@@ -67,8 +67,9 @@ public final class SpeechSynthesizerActor: @preconcurrency SpeechSynthesizerProt
         self.driver = driver
     }
 
-    public func speak(_ text: String, language: String?) async {
-        guard case .idle = state else { return }
+    @discardableResult
+    public func speak(_ text: String, language: String?) async -> SpeechResult {
+        guard case .idle = state else { return .failed }
 
         let utterance = AVSpeechUtterance(string: text)
         if let lang = language, !lang.isEmpty {
@@ -80,13 +81,20 @@ public final class SpeechSynthesizerActor: @preconcurrency SpeechSynthesizerProt
 
         let speakId = UUID()
 
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                let bridge = SpeechDelegateBridge { [weak self] in
-                    Task { @MainActor [weak self] in
-                        self?.resumeIfIdMatch(speakId)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<SpeechResult, Never>) in
+                let bridge = SpeechDelegateBridge(
+                    onFinish: { [weak self] in
+                        Task { @MainActor [weak self] in
+                            self?.resumeCompleted(speakId)
+                        }
+                    },
+                    onCancel: { [weak self] in
+                        Task { @MainActor [weak self] in
+                            self?.resumeCancelled(speakId)
+                        }
                     }
-                }
+                )
                 delegate = bridge
                 driver.delegate = bridge
                 state = .speaking(id: speakId, continuation: cont)
@@ -100,7 +108,7 @@ public final class SpeechSynthesizerActor: @preconcurrency SpeechSynthesizerProt
             }
         } onCancel: {
             Task { @MainActor [weak self] in
-                self?.stop()
+                self?.cancelSpeak()
             }
         }
     }
@@ -113,10 +121,21 @@ public final class SpeechSynthesizerActor: @preconcurrency SpeechSynthesizerProt
         driver.delegate = nil
         speakTimeoutTask?.cancel()
         speakTimeoutTask = nil
-        cont.resume()
+        cont.resume(returning: .cancelled)
     }
 
-    private func resumeIfIdMatch(_ id: UUID) {
+    private func cancelSpeak() {
+        guard case .speaking(_, let cont) = state else { return }
+        _ = driver.stopSpeaking(at: .immediate)
+        state = .idle
+        delegate = nil
+        driver.delegate = nil
+        speakTimeoutTask?.cancel()
+        speakTimeoutTask = nil
+        cont.resume(returning: .cancelled)
+    }
+
+    private func resumeCompleted(_ id: UUID) {
         guard case .speaking(let currentId, let cont) = state, currentId == id
         else { return }
         state = .idle
@@ -124,21 +143,40 @@ public final class SpeechSynthesizerActor: @preconcurrency SpeechSynthesizerProt
         driver.delegate = nil
         speakTimeoutTask?.cancel()
         speakTimeoutTask = nil
-        cont.resume()
+        cont.resume(returning: .completed)
+    }
+
+    private func resumeCancelled(_ id: UUID) {
+        guard case .speaking(let currentId, let cont) = state, currentId == id
+        else { return }
+        _ = driver.stopSpeaking(at: .immediate)
+        state = .idle
+        delegate = nil
+        driver.delegate = nil
+        speakTimeoutTask?.cancel()
+        speakTimeoutTask = nil
+        cont.resume(returning: .cancelled)
     }
 
     private func timeoutSpeak() {
-        guard case .speaking = state else { return }
-        stop()
+        guard case .speaking(_, let cont) = state else { return }
+        _ = driver.stopSpeaking(at: .immediate)
+        state = .idle
+        delegate = nil
+        driver.delegate = nil
+        speakTimeoutTask = nil
+        cont.resume(returning: .failed)
     }
 }
 
 private final class SpeechDelegateBridge: NSObject, AVSpeechSynthesizerDelegate,
     @unchecked Sendable {
     private let onFinish: @Sendable () -> Void
+    private let onCancel: @Sendable () -> Void
 
-    init(onFinish: @escaping @Sendable () -> Void) {
+    init(onFinish: @escaping @Sendable () -> Void, onCancel: @escaping @Sendable () -> Void) {
         self.onFinish = onFinish
+        self.onCancel = onCancel
     }
 
     func speechSynthesizer(
@@ -150,6 +188,6 @@ private final class SpeechDelegateBridge: NSObject, AVSpeechSynthesizerDelegate,
     func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance
     ) {
-        onFinish()
+        onCancel()
     }
 }

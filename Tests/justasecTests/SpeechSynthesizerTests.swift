@@ -61,8 +61,8 @@ func bestVoiceLowercase() {
 @Test("SpeechSynthesizerFake records spoken texts")
 func fakeRecordsSpoken() async {
     let fake = SpeechSynthesizerFake()
-    await fake.speak("Hello", language: "en")
-    await fake.speak("Bonjour", language: "fr")
+    _ = await fake.speak("Hello", language: "en")
+    _ = await fake.speak("Bonjour", language: "fr")
     #expect(fake.spokenTexts.count == 2)
     #expect(fake.spokenTexts[0].0 == "Hello")
     #expect(fake.spokenTexts[0].1 == "en")
@@ -91,7 +91,7 @@ func singleResumeDidFinish() async {
     let driver = TestSpeechDriver()
     let synth = SpeechSynthesizerActor(driver: driver)
 
-    let task = Task { await synth.speak("Hello", language: "en") }
+    let task = Task { _ = await synth.speak("Hello", language: "en") }
     try? await Task.sleep(nanoseconds: 10_000_000)
 
     driver.fireDidFinish()
@@ -106,7 +106,7 @@ func stopAndDelegateRace() async {
     let driver = TestSpeechDriver()
     let synth = SpeechSynthesizerActor(driver: driver)
 
-    let task = Task { await synth.speak("Hello", language: "en") }
+    let task = Task { _ = await synth.speak("Hello", language: "en") }
     try? await Task.sleep(nanoseconds: 10_000_000)
 
     synth.stop()
@@ -121,10 +121,10 @@ func concurrentSpeakRejected() async {
     let driver = TestSpeechDriver()
     let synth = SpeechSynthesizerActor(driver: driver)
 
-    let task1 = Task { await synth.speak("First", language: "en") }
+    let task1 = Task { _ = await synth.speak("First", language: "en") }
     try? await Task.sleep(nanoseconds: 10_000_000)
 
-    let task2 = Task { await synth.speak("Second", language: "en") }
+    let task2 = Task { _ = await synth.speak("Second", language: "en") }
 
     driver.fireDidFinish()
     await task1.value
@@ -140,7 +140,7 @@ func cancelDuringSpeaking() async {
     let driver = TestSpeechDriver()
     let synth = SpeechSynthesizerActor(driver: driver)
 
-    let task = Task { await synth.speak("Hello", language: "en") }
+    let task = Task { _ = await synth.speak("Hello", language: "en") }
     try? await Task.sleep(nanoseconds: 10_000_000)
 
     task.cancel()
@@ -156,7 +156,7 @@ func timeoutResumes() async {
     let synth = SpeechSynthesizerActor(driver: driver)
 
     let task = Task {
-        await synth.speak("Hello", language: "en")
+        _ = await synth.speak("Hello", language: "en")
     }
     try? await Task.sleep(nanoseconds: 10_000_000)
 
@@ -175,7 +175,7 @@ func didCancelResumes() async {
     let driver = TestSpeechDriver()
     let synth = SpeechSynthesizerActor(driver: driver)
 
-    let task = Task { await synth.speak("Hello", language: "en") }
+    let task = Task { _ = await synth.speak("Hello", language: "en") }
     try? await Task.sleep(nanoseconds: 10_000_000)
 
     driver.fireDidCancel()

@@ -1,8 +1,10 @@
 import AudioToolbox
+import Foundation
 
 public enum ChimeType: Sendable {
     case trigger
     case busy
+    case success
 }
 
 public struct AudioFeedback: Sendable {
@@ -20,11 +22,21 @@ public struct AudioFeedback: Sendable {
         return soundID
     }()
 
+    private static let successSound: SystemSoundID = {
+        guard let url = Bundle.main.url(forResource: "success-chime", withExtension: "wav") else {
+            return 0
+        }
+        var soundID = SystemSoundID(0)
+        AudioServicesCreateSystemSoundID(url as CFURL, &soundID)
+        return soundID
+    }()
+
     public static func play(_ chime: ChimeType) {
         let soundID: SystemSoundID
         switch chime {
         case .trigger: soundID = triggerSound
         case .busy: soundID = busySound
+        case .success: soundID = successSound
         }
         if soundID != 0 {
             AudioServicesPlaySystemSound(soundID)
@@ -37,6 +49,9 @@ public struct AudioFeedback: Sendable {
         }
         if busySound != 0 {
             AudioServicesDisposeSystemSoundID(busySound)
+        }
+        if successSound != 0 {
+            AudioServicesDisposeSystemSoundID(successSound)
         }
     }
 }

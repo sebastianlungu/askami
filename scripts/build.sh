@@ -29,6 +29,7 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BINARY" "$APP_BUNDLE/Contents/MacOS/$PRODUCT"
 cp scripts/Info.plist "$APP_BUNDLE/Contents/"
 cp scripts/AppIcon.icns "$APP_BUNDLE/Contents/Resources/"
+cp scripts/success-chime.wav "$APP_BUNDLE/Contents/Resources/"
 
 # Copy entitlements
 echo "  App bundle: $APP_BUNDLE"

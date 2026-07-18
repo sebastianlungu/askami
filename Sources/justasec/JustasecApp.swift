@@ -34,12 +34,15 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         PipelineOrchestrator(
             stateMachine: lifecycle,
             dependencies: PipelineDependencies(
-                snapshotEngine: snapshotEngine,
-                transcriber: WhisperTranscriber(),
-                reasoner: OpenCodeClient(),
+                pipeline: .init(
+                    snapshotEngine: snapshotEngine,
+                    transcriber: WhisperTranscriber(),
+                    reasoner: OpenCodeClient()
+                ),
                 speech: speechSynth,
-                micGate: micSuppressionGate
-            )
+                feedback: .init(micGate: micSuppressionGate)
+            ),
+            presenter: dockStatusPresenter
         )
     }()
 
@@ -159,7 +162,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         fputs("justasec: startup failed — \(message)\n", stderr)
         lifecycle.fail()
         dockStatusPresenter.transition(to: .error)
-        await speechSynth.speak("Startup failed.", language: "en")
+        _ = await speechSynth.speak("Startup failed.", language: "en")
     }
 
     private func waitForWhisperReady() async -> Bool {
@@ -179,7 +182,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
                     self?.captureSession = nil
                     self?.lifecycle.fail()
                     self?.dockStatusPresenter.transition(to: .error)
-                    await self?.speechSynth.speak("Capture failed.", language: "en")
+                    _ = await self?.speechSynth.speak("Capture failed.", language: "en")
                 }
             },
             onFormatChange: { format, source in

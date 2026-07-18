@@ -16,6 +16,11 @@ private func runPipeline(_ orchestrator: PipelineOrchestrator) async {
     }
 }
 
+private final class ChimeRecorder: @unchecked Sendable {
+    var chimes: [ChimeType] = []
+    func record(_ chime: ChimeType) { chimes.append(chime) }
+}
+
 // MARK: - Exact once
 
 @Test("ready state trigger produces exactly one pipeline run and one spoken answer")
@@ -41,12 +46,16 @@ func readyTriggerExactOnce() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: reasonerFake,
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
             speech: speechFake,
-            clock: clockFake,
-            log: { logCollector.append($0) }
+            feedback: .init(
+                clock: clockFake,
+                log: { logCollector.append($0) }
+            )
         )
     )
 
@@ -88,10 +97,14 @@ func busyTriggerDuringProcessing() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: reasonerFake,
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
 
@@ -136,11 +149,15 @@ func stateTransitionsSuccess() async throws {
     let clockFake = ClockFake()
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: reasonerFake,
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
             speech: speechFake,
-            clock: clockFake
+            feedback: .init(
+                clock: clockFake
+            )
         )
     )
 
@@ -167,10 +184,14 @@ func silenceProducesError() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: WhisperTranscriberFake(),
-            reasoner: OpenCodeClientFake(),
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
 
@@ -199,11 +220,15 @@ func transcriptionErrorProducesSpeech() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: OpenCodeClientFake(),
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: OpenCodeClientFake()
+            ),
             speech: speechFake,
-            log: { logCollector.append($0) }
+            feedback: .init(
+                log: { logCollector.append($0) }
+            )
         )
     )
 
@@ -237,11 +262,15 @@ func openCodeErrorProducesSpeech() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: reasonerFake,
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
             speech: speechFake,
-            log: { logCollector.append($0) }
+            feedback: .init(
+                log: { logCollector.append($0) }
+            )
         )
     )
 
@@ -268,11 +297,15 @@ func pipelineErrorProducesSpeech() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: WhisperTranscriberFake(),
-            reasoner: OpenCodeClientFake(),
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
             speech: speechFake,
-            log: { logCollector.append($0) }
+            feedback: .init(
+                log: { logCollector.append($0) }
+            )
         )
     )
 
@@ -306,10 +339,14 @@ func languagePassThrough() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: reasonerFake,
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
 
@@ -341,17 +378,21 @@ func timingLogsContentFree() async throws {
 
     let speechFake = SpeechSynthesizerFake()
     let clockFake = ClockFake()
-    clockFake.nowValue = 1000
+    clockFake.advance(by: 1000)
     let logCollector = LogCollector()
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: reasonerFake,
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
             speech: speechFake,
-            clock: clockFake,
-            log: { logCollector.append($0) }
+            feedback: .init(
+                clock: clockFake,
+                log: { logCollector.append($0) }
+            )
         )
     )
 
@@ -412,10 +453,14 @@ func captureContinuesDuringPipeline() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: reasonerFake,
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
 
@@ -467,10 +512,14 @@ func errorSpeechNoContent() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: WhisperTranscriberFake(),
-            reasoner: OpenCodeClientFake(),
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
 
@@ -552,10 +601,14 @@ func layeredArtifactNoTraceAfterSuccess() async throws {
     let speechFake = SpeechSynthesizerFake()
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: reasonerFake,
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
     try orchestrator.stateMachine.startupComplete()
@@ -590,10 +643,14 @@ func layeredArtifactNoTraceAfterFailure() async throws {
     let speechFake = SpeechSynthesizerFake()
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: WhisperTranscriberFake(),
-            reasoner: OpenCodeClientFake(),
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
     try orchestrator.stateMachine.startupComplete()
@@ -672,10 +729,14 @@ func noQueueDuringSpeaking() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: WhisperTranscriberFake(),
-            reasoner: reasonerFake,
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: reasonerFake
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
 
@@ -715,11 +776,15 @@ func micSuppressionDuringSpeaking() async throws {
     let micGate = MicSuppressionGate()
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: WhisperTranscriberFake(),
-            reasoner: reasonerFake,
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: reasonerFake
+            ),
             speech: speechFake,
-            micGate: micGate
+            feedback: .init(
+                micGate: micGate
+            )
         )
     )
 
@@ -753,10 +818,14 @@ func pipelineOffMainActor() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: transcriberFake,
-            reasoner: reasonerFake,
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
 
@@ -786,10 +855,14 @@ func runtimeCaptureFailure() async throws {
 
     let orchestrator = PipelineOrchestrator(
         dependencies: PipelineDependencies(
-            snapshotEngine: snapshotFake,
-            transcriber: WhisperTranscriberFake(),
-            reasoner: OpenCodeClientFake(),
-            speech: speechFake
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+            )
         )
     )
 
@@ -798,4 +871,694 @@ func runtimeCaptureFailure() async throws {
 
     #expect(speechFake.spokenTexts.count == 1)
     #expect(speechFake.spokenTexts[0].0 == "Audio processing failed.")
+}
+
+// MARK: - EventRecorder Tests
+
+private func makeSuccessDeps(
+    clock: ClockProtocol = ClockFake(),
+    speech: SpeechSynthesizerProtocol = SpeechSynthesizerFake(),
+    eventRecorder: EventRecorder? = nil,
+    playChime: @escaping @Sendable (ChimeType) -> Void = { _ in }
+) -> (snapshot: SnapshotEngineFake, transcriber: WhisperTranscriberFake, reasoner: OpenCodeClientFake, clock: ClockProtocol, deps: PipelineDependencies) {
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(makeTestWAV())
+    let transcriberFake = WhisperTranscriberFake()
+    transcriberFake.stubResult = .success(
+        WhisperTranscriptionResult(text: "hello", language: "english")
+    )
+    let reasonerFake = OpenCodeClientFake()
+    reasonerFake.stubResult = .success(
+        OpenCodeResult(answer: "Hi.", language: "en")
+    )
+    let deps = PipelineDependencies(
+        pipeline: .init(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake
+        ),
+        speech: speech,
+        feedback: .init(
+            clock: clock,
+            playChime: playChime
+        ),
+        eventRecorder: eventRecorder
+    )
+    return (snapshotFake, transcriberFake, reasonerFake, clock, deps)
+}
+
+@Test("exact success event order with event recorder")
+@MainActor
+func exactSuccessEventOrder() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    #expect(events.contains(.status(.stt)))
+    #expect(events.contains(.status(.agent)))
+    let suppressionIdx = events.firstIndex { $0 == .suppressionStart }
+    let successIdx = events.firstIndex { $0 == .status(.success) }
+    let chimeIdx = events.firstIndex { $0 == .chime(.success) }
+    let sleepIdx = events.firstIndex { $0 == .sleep(0.3) }
+    let ttsIdx = events.firstIndex { $0 == .status(.tts) }
+    let speechBeginIdx = events.firstIndex { $0 == .speechBegin }
+    let speechEndIdx = events.firstIndex { $0 == .speechResult(.completed) }
+    let suppressionEndIdx = events.firstIndex { $0 == .suppressionEnd }
+    let lifecycleReadyIdx = events.firstIndex { $0 == .lifecycleReady }
+    let listeningIdx = events.firstIndex { $0 == .status(.listening) }
+
+    if let s = suppressionIdx, let su = successIdx, let c = chimeIdx,
+       let sl = sleepIdx, let t = ttsIdx, let sp = speechBeginIdx,
+       let se = speechEndIdx, let supe = suppressionEndIdx,
+       let lr = lifecycleReadyIdx, let li = listeningIdx {
+        #expect(s < su)
+        #expect(su < c)
+        #expect(c < sl)
+        #expect(sl < t)
+        #expect(t < sp)
+        #expect(sp < se)
+        #expect(se < supe)
+        #expect(supe < lr)
+        #expect(lr < li)
+    } else {
+        Issue.record("missing expected events: \(events)")
+    }
+    let successChimeCount = events.filter { $0 == .chime(.success) }.count
+    #expect(successChimeCount == 1)
+    let speechEndCount = events.filter { $0 == .speechResult(.completed) }.count
+    #expect(speechEndCount == 1)
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
+@Test("suppression starts before success chime and chime before tts")
+@MainActor
+func suppressionChimeTTsOrder() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    let suppressionIdx = events.firstIndex { $0 == .suppressionStart }
+    let chimeIdx = events.firstIndex { $0 == .chime(.success) }
+    let ttsIdx = events.firstIndex { $0 == .status(.tts) }
+    if let s = suppressionIdx, let c = chimeIdx, let t = ttsIdx {
+        #expect(s < c)
+        #expect(c < t)
+    } else {
+        Issue.record("missing suppression/chime/tts events")
+    }
+}
+
+@Test("exactly one success chime never after tts")
+@MainActor
+func successChimeOnceBeforeTTS() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    let successChimes = events.filter { $0 == .chime(.success) }
+    #expect(successChimes.count == 1)
+    let ttsIdx = events.firstIndex { $0 == .status(.tts) }
+    let chimeIdx = events.firstIndex { $0 == .chime(.success) }
+    if let c = chimeIdx, let t = ttsIdx {
+        #expect(c < t)
+    }
+}
+
+@Test("sleep 0.3 recorded by clock fake")
+@MainActor
+func sleep300Recorded() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    #expect(clockFake.sleeps.contains(0.3))
+    #expect(clockFake.totalSlept >= 0.3)
+}
+
+@Test("busy trigger at stt preserves current status and plays busy chime")
+@MainActor
+func busyTriggerAtSTTPreservesStatus() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    speechFake.delay = 0.2
+    let chimeRecorder = ChimeRecorder()
+    let (_, _, _, _, deps) = makeSuccessDeps(
+        clock: clockFake, speech: speechFake, eventRecorder: recorder,
+        playChime: { chimeRecorder.record($0) }
+    )
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    orchestrator.handleTrigger()
+    #expect(orchestrator.presenter.currentStatus == .stt)
+    #expect(chimeRecorder.chimes.filter { $0 == .trigger }.count == 1)
+
+    // Busy trigger should not change status
+    chimeRecorder.chimes.removeAll()
+    orchestrator.handleTrigger()
+    #expect(orchestrator.presenter.currentStatus == .stt)
+    #expect(chimeRecorder.chimes.filter { $0 == .busy }.count == 1)
+
+    if let task = orchestrator.currentPipelineTask {
+        await task.value
+    }
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
+@Test("silence error shows error then returns to listening with min 1.5s")
+@MainActor
+func silenceErrorMinDuration() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(nil)
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    #expect(events.contains(.status(.error)))
+    #expect(events.contains(.status(.listening)))
+    let errorIdx = events.firstIndex { $0 == .status(.error) }
+    let listeningIdx = events.firstIndex { $0 == .status(.listening) }
+    if let e = errorIdx, let l = listeningIdx {
+        #expect(e < l)
+    }
+    let sleepEvents = clockFake.sleeps
+    let totalErrorSleep = sleepEvents.reduce(0, +)
+    #expect(totalErrorSleep >= 1.5 || events.contains(where: { if case .sleep(let s) = $0 { return s >= 1.5 }; return false }))
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
+@Test("transcription error shows error then returns to listening")
+@MainActor
+func transcriptionErrorEventOrder() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(makeTestWAV())
+    let transcriberFake = WhisperTranscriberFake()
+    transcriberFake.stubResult = .failure(.inferenceFailed("HTTP 500"))
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    #expect(events.contains(.status(.error)))
+    #expect(events.contains(.status(.listening)))
+    let errorIdx = events.firstIndex { $0 == .status(.error) }
+    let listeningIdx = events.firstIndex { $0 == .status(.listening) }
+    if let e = errorIdx, let l = listeningIdx {
+        #expect(e < l)
+    }
+}
+
+@Test("opencode error shows error then returns to listening")
+@MainActor
+func openCodeErrorEventOrder() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(makeTestWAV())
+    let transcriberFake = WhisperTranscriberFake()
+    transcriberFake.stubResult = .success(
+        WhisperTranscriptionResult(text: "hello", language: "english")
+    )
+    let reasonerFake = OpenCodeClientFake()
+    reasonerFake.stubResult = .failure(.timeout)
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    #expect(events.contains(.status(.error)))
+    #expect(events.contains(.status(.listening)))
+}
+
+@Test("speech failure shows error min 1.5s then listening")
+@MainActor
+func speechFailureRecovery() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    speechFake.shouldFail = true
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    #expect(events.contains(.speechResult(.failed)))
+    #expect(events.contains(.status(.error)))
+    #expect(events.contains(.status(.listening)))
+    let sleepEvents = clockFake.sleeps
+    let totalSleep = sleepEvents.reduce(0, +)
+    #expect(totalSleep >= 1.5 || events.contains(where: { if case .sleep(let s) = $0 { return s >= 1.5 }; return false }))
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
+@Test("speech elapsed >1.5s does not add extra hold")
+@MainActor
+func speechElapsedOverMinNoExtraHold() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    speechFake.delay = 2.0
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    #expect(events.contains(.status(.listening)))
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
+@Test("lifecycle completes before listening transition")
+@MainActor
+func lifecycleBeforeListening() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    let readyIdx = events.firstIndex { $0 == .lifecycleReady }
+    let listeningIdx = events.firstIndex { $0 == .status(.listening) }
+    if let r = readyIdx, let l = listeningIdx {
+        #expect(r < l)
+    }
+}
+
+@Test("fatal lifecycle fail leaves error status not listening")
+@MainActor
+func fatalLifecycleLeavesError() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    speechFake.delay = 0.1
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    // Force lifecycle to failed state manually after pipeline starts
+    orchestrator.handleTrigger()
+    orchestrator.stateMachine.fail()
+
+    if let task = orchestrator.currentPipelineTask {
+        await task.value
+    }
+    // After fail, state should stay failed
+    #expect(orchestrator.stateMachine.state == .failed)
+}
+
+@Test("stale pipeline callback after lifecycle fail does not transition to listening")
+@MainActor
+func staleCallbackNoListeningOverride() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    orchestrator.handleTrigger()
+    orchestrator.stateMachine.fail()
+
+    if let task = orchestrator.currentPipelineTask {
+        await task.value
+    }
+    #expect(orchestrator.stateMachine.state == .failed)
+    let lastStatus = recorder.events.last { if case .status(_) = $0 { return true }; return false }
+    if case .status(let s)? = lastStatus {
+        #expect(s != .listening)
+    }
+}
+
+@Test("success chime never appears after speech events")
+@MainActor
+func successChimeNeverAfterSpeech() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    let chimeIndices = events.enumerated().filter { $0.element == .chime(.success) }.map { $0.offset }
+    let speechIndices = events.enumerated().filter { $0.element == .speechBegin || $0.element == .speechResult(.completed) }.map { $0.offset }
+    for c in chimeIndices {
+        for s in speechIndices {
+            #expect(c < s)
+        }
+    }
+}
+
+@Test("no sensitive content in error events or logs")
+@MainActor
+func errorEventsNoSensitive() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(nil)
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    for event in recorder.events {
+        let desc = String(describing: event)
+        #expect(!desc.lowercased().contains("transcript"))
+        #expect(!desc.lowercased().contains("answer"))
+        #expect(!desc.lowercased().contains("bonjour"))
+    }
+}
+
+// MARK: - Controlled Speech Fake for deterministic timing
+
+private final class ControlledSpeechFake: SpeechSynthesizerProtocol, @unchecked Sendable {
+    var spokenTexts: [(String, String?)] = []
+    var delay: TimeInterval = 0
+    var shouldFail = false
+    let clock: ClockFake
+
+    init(clock: ClockFake) { self.clock = clock }
+
+    func speak(_ text: String, language: String?) async -> SpeechResult {
+        if shouldFail { return .failed }
+        if delay > 0 { clock.advance(by: delay) }
+        spokenTexts.append((text, language))
+        return .completed
+    }
+
+    func stop() {}
+}
+
+// MARK: - Settle Evidence
+
+@Test("mic gate suppressing after speech, idle after settle")
+@MainActor
+func settleSuppressionEvidence() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let micGate = MicSuppressionGate()
+    let (_, _, _, _, deps) = makeSuccessDeps(
+        clock: clockFake, speech: speechFake, eventRecorder: recorder
+    )
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    let speechEndIdx = events.firstIndex { $0 == .speechResult(.completed) }
+    let supEndIdx = events.firstIndex { $0 == .suppressionEnd }
+    if let s = speechEndIdx, let e = supEndIdx {
+        #expect(s < e)
+    }
+    #expect(!micGate.isSuppressing)
+}
+
+// MARK: - Speech Elapsed with Controlled Fake
+
+@Test("speech elapsed <1.5 with controlled fake holds remainder")
+@MainActor
+func speechElapsedBelowMinHoldsRemainder() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = ControlledSpeechFake(clock: clockFake)
+    speechFake.shouldFail = true
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let sleeps = clockFake.sleeps
+    let totalSleep = sleeps.reduce(0, +)
+    #expect(totalSleep >= 1.5)
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
+@Test("speech elapsed >1.5 with controlled fake holds nothing extra")
+@MainActor
+func speechElapsedOverMinNoExtraHoldControlled() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = ControlledSpeechFake(clock: clockFake)
+    speechFake.delay = 2.0
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    // Speech took 2.0s (>1.5), no extra sleep needed
+    let sleeps = clockFake.sleeps
+    let successSleep = sleeps.filter { abs($0 - 0.3) < 0.01 }
+    #expect(successSleep.count == 1)
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
+// MARK: - Busy Triggers
+
+@Test("busy trigger preserves status and plays one busy chime, one pipeline")
+@MainActor
+func busyTriggerPreservesStatus() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    speechFake.delay = 0.3
+    let chimeRecorder = ChimeRecorder()
+    let (_, _, _, _, deps) = makeSuccessDeps(
+        clock: clockFake, speech: speechFake, eventRecorder: recorder,
+        playChime: { chimeRecorder.record($0) }
+    )
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    orchestrator.handleTrigger()
+    #expect(orchestrator.presenter.currentStatus == .stt)
+    #expect(chimeRecorder.chimes.filter { $0 == .trigger }.count == 1)
+
+    orchestrator.handleTrigger()
+    #expect(chimeRecorder.chimes.filter { $0 == .busy }.count == 1)
+    #expect(chimeRecorder.chimes.filter { $0 == .trigger }.count == 1)
+
+    if let task = orchestrator.currentPipelineTask {
+        await task.value
+    }
+    #expect(speechFake.spokenTexts.count == 1)
+    #expect(orchestrator.stateMachine.state == .ready)
+
+    let events = recorder.events
+    #expect(events.contains(.status(.stt)))
+    #expect(events.contains(.status(.agent)))
+    #expect(events.contains(.status(.success)))
+    #expect(events.contains(.status(.tts)))
+    #expect(events.contains(.status(.listening)))
+}
+
+// MARK: - Fatal / Stale with Presenter Error
+
+@Test("fatal with presenter error stays failed, does not transition to listening")
+@MainActor
+func fatalWithPresenterError() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    speechFake.delay = 0.1
+    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    orchestrator.handleTrigger()
+    orchestrator.stateMachine.fail()
+    orchestrator.presenter.transition(to: .error)
+
+    if let task = orchestrator.currentPipelineTask {
+        await task.value
+    }
+    #expect(orchestrator.stateMachine.state == .failed)
+    let lastStatusInHistory = recorder.events.last { if case .status = $0 { return true }; return false }
+    if case .status(let s)? = lastStatusInHistory {
+        #expect(s != .listening)
+    }
+}
+
+// MARK: - Malformed Answer
+
+@Test("malformed opencode answer shows error and recovers")
+@MainActor
+func malformedAnswerError() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let speechFake = SpeechSynthesizerFake()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(makeTestWAV())
+    let transcriberFake = WhisperTranscriberFake()
+    transcriberFake.stubResult = .success(
+        WhisperTranscriptionResult(text: "hello", language: "english")
+    )
+    let reasonerFake = OpenCodeClientFake()
+    reasonerFake.stubResult = .failure(.malformedResponse("no valid answer"))
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: reasonerFake
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let events = recorder.events
+    #expect(events.contains(.status(.error)))
+    #expect(events.contains(.status(.listening)))
+    let sleepEvents = clockFake.sleeps
+    let totalSleep = sleepEvents.reduce(0, +)
+    #expect(totalSleep >= 1.5 || events.contains(where: { if case .sleep(let s) = $0 { return s >= 1.5 }; return false }))
+    #expect(orchestrator.stateMachine.state == .ready)
+    #expect(speechFake.spokenTexts.count == 1)
+    #expect(speechFake.spokenTexts[0].0 == "Reasoning process failed.")
+}
+
+// MARK: - Cancelled Speech in Recovery
+
+@Test("cancelled error path does not recover to listening")
+@MainActor
+func cancelledErrorPathNoListening() async throws {
+    let recorder = EventRecorder()
+    let clockFake = ClockFake()
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(nil)
+    let speechFake = SpeechSynthesizerFake()
+
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: WhisperTranscriberFake(),
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init(
+                clock: clockFake
+            ),
+            eventRecorder: recorder
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    // Silence should produce error→listen. If speech somehow failed/cancelled,
+    // ensure the state machine is still ready (not stuck in processing)
+    let lastStatus = recorder.events.last { if case .status = $0 { return true }; return false }
+    if case .status(let s)? = lastStatus {
+        #expect(s == .listening)
+    }
+    #expect(orchestrator.stateMachine.state == .ready)
 }

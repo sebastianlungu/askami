@@ -25,18 +25,29 @@ public protocol ReasonerProtocol: Sendable {
 
 extension OpenCodeClient: ReasonerProtocol {}
 
+public enum SpeechResult: Sendable, Equatable {
+    case completed
+    case cancelled
+    case failed
+}
+
 public protocol SpeechSynthesizerProtocol: AnyObject, Sendable {
-    func speak(_ text: String, language: String?) async
+    @discardableResult
+    func speak(_ text: String, language: String?) async -> SpeechResult
     func stop()
 }
 
 public protocol ClockProtocol: Sendable {
     func now() -> TimeInterval
+    func sleep(seconds: TimeInterval) async throws
 }
 
 public struct SystemClock: ClockProtocol, Sendable {
     public init() {}
     public func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+    public func sleep(seconds: TimeInterval) async throws {
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    }
 }
 
 // MARK: - Pipeline errors
@@ -75,7 +86,36 @@ public struct TimingSnapshot: Sendable, Equatable {
 
 public typealias LogFunction = @Sendable (String) -> Void
 
-// MARK: - Cohesive dependency container (≤4 params everywhere)
+// MARK: - Pipeline events for test recording
+
+public enum PipelineEvent: Sendable, Equatable {
+    case status(DockStatus)
+    case suppressionStart
+    case suppressionEnd
+    case chime(ChimeType)
+    case sleep(TimeInterval)
+    case speechBegin
+    case speechResult(SpeechResult)
+    case lifecycleReady
+}
+
+public final class EventRecorder: Sendable {
+    private let _events: OSAllocatedUnfairLock<[PipelineEvent]>
+
+    public init() {
+        _events = OSAllocatedUnfairLock(initialState: [])
+    }
+
+    public func record(_ event: PipelineEvent) {
+        _events.withLock { $0.append(event) }
+    }
+
+    public var events: [PipelineEvent] {
+        _events.withLock { $0 }
+    }
+}
+
+// MARK: - Dependency container with grouped construction
 
 public struct PipelineDependencies: Sendable {
     public let snapshotEngine: SnapshotEngineProtocol
@@ -85,23 +125,61 @@ public struct PipelineDependencies: Sendable {
     public let clock: ClockProtocol
     public let micGate: MicSuppressionGate
     public let log: LogFunction
+    public let playChime: @Sendable (ChimeType) -> Void
+    public let eventRecorder: EventRecorder?
 
     public init(
-        snapshotEngine: SnapshotEngineProtocol,
-        transcriber: TranscriberProtocol,
-        reasoner: ReasonerProtocol,
+        pipeline: PipelineComponents,
         speech: SpeechSynthesizerProtocol,
-        clock: ClockProtocol = SystemClock(),
-        micGate: MicSuppressionGate = MicSuppressionGate(),
-        log: @escaping LogFunction = { fputs($0, stderr) }
+        feedback: FeedbackComponents,
+        eventRecorder: EventRecorder? = nil
     ) {
-        self.snapshotEngine = snapshotEngine
-        self.transcriber = transcriber
-        self.reasoner = reasoner
+        self.snapshotEngine = pipeline.snapshotEngine
+        self.transcriber = pipeline.transcriber
+        self.reasoner = pipeline.reasoner
         self.speech = speech
-        self.clock = clock
-        self.micGate = micGate
-        self.log = log
+        self.clock = feedback.clock
+        self.micGate = feedback.micGate
+        self.log = feedback.log
+        self.playChime = feedback.playChime
+        self.eventRecorder = eventRecorder
+    }
+}
+
+extension PipelineDependencies {
+    public struct PipelineComponents: Sendable {
+        public let snapshotEngine: SnapshotEngineProtocol
+        public let transcriber: TranscriberProtocol
+        public let reasoner: ReasonerProtocol
+
+        public init(
+            snapshotEngine: SnapshotEngineProtocol,
+            transcriber: TranscriberProtocol,
+            reasoner: ReasonerProtocol
+        ) {
+            self.snapshotEngine = snapshotEngine
+            self.transcriber = transcriber
+            self.reasoner = reasoner
+        }
+    }
+
+    public struct FeedbackComponents: Sendable {
+        public let clock: ClockProtocol
+        public let micGate: MicSuppressionGate
+        public let log: LogFunction
+        public let playChime: @Sendable (ChimeType) -> Void
+
+        public init(
+            clock: ClockProtocol = SystemClock(),
+            micGate: MicSuppressionGate = MicSuppressionGate(),
+            log: @escaping LogFunction = { fputs($0, stderr) },
+            playChime: @escaping @Sendable (ChimeType) -> Void = { AudioFeedback.play($0) }
+        ) {
+            self.clock = clock
+            self.micGate = micGate
+            self.log = log
+            self.playChime = playChime
+        }
     }
 }
 
@@ -153,14 +231,21 @@ public final class SnapshotEngineFake: SnapshotEngineProtocol, @unchecked Sendab
 public final class SpeechSynthesizerFake: SpeechSynthesizerProtocol, @unchecked Sendable {
     public var spokenTexts: [(String, String?)] = []
     public var delay: TimeInterval = 0
+    public var shouldFail = false
 
     public init() {}
 
-    public func speak(_ text: String, language: String?) async {
+    public func speak(_ text: String, language: String?) async -> SpeechResult {
+        if shouldFail { return .failed }
         if delay > 0 {
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return .cancelled
+            }
         }
         spokenTexts.append((text, language))
+        return .completed
     }
 
     public func stop() {}
@@ -196,12 +281,33 @@ public final class TestSpeechDriver: SpeechDriverProtocol, @unchecked Sendable {
 
 // MARK: - ClockFake
 
-public final class ClockFake: ClockProtocol, @unchecked Sendable {
-    public var nowValue: TimeInterval = 0
+public final class ClockFake: ClockProtocol, Sendable {
+    private let _state: OSAllocatedUnfairLock<(now: TimeInterval, sleeps: [TimeInterval])>
 
-    public init() {}
+    public init() {
+        _state = OSAllocatedUnfairLock(initialState: (now: 0, sleeps: []))
+    }
 
-    public func now() -> TimeInterval { nowValue }
+    public func now() -> TimeInterval {
+        _state.withLock { $0.now }
+    }
 
-    public func advance(by: TimeInterval) { nowValue += by }
+    public func advance(by: TimeInterval) {
+        _state.withLock { $0.now += by }
+    }
+
+    public func sleep(seconds: TimeInterval) async throws {
+        _state.withLock {
+            $0.now += seconds
+            $0.sleeps.append(seconds)
+        }
+    }
+
+    public var sleeps: [TimeInterval] {
+        _state.withLock { $0.sleeps }
+    }
+
+    public var totalSlept: TimeInterval {
+        _state.withLock { $0.sleeps.reduce(0, +) }
+    }
 }
