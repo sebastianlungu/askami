@@ -47,11 +47,26 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     }()
 
     private lazy var hotkeyController: HotkeyController = {
-        HotkeyController { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.orchestrator.handleTrigger()
-            }
-        }
+        HotkeyController(
+            handler: { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.orchestrator.handleTrigger()
+                }
+            },
+            registrar: RealCarbonHotkeyRegistrar(),
+            preferenceStore: RealShortcutPreferenceStore()
+        )
+    }()
+
+    public lazy var settingsPanelController: SettingsPanelController = {
+        SettingsPanelController(
+            initialShortcut: hotkeyController.currentShortcut,
+            onReplace: { [weak self] shortcut in
+                guard let self else { return false }
+                return hotkeyController.replaceShortcut(with: shortcut)
+            },
+            onTerminate: { NSApp.terminate(nil) }
+        )
     }()
 
     public override init() {
@@ -65,9 +80,15 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        setupMenu()
         startupTask = Task { @MainActor in
             await performStartup()
         }
+    }
+
+    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        settingsPanelController.showPanel()
+        return true
     }
 
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -122,6 +143,24 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             captureSession = nil
         }
         fputs("justasec: terminated\n", stderr)
+    }
+
+    private func setupMenu() {
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+
+        let appMenu = NSMenu()
+        let quitItem = NSMenuItem(
+            title: "Quit JustASec",
+            action: #selector(NSApp.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        quitItem.keyEquivalentModifierMask = .command
+        appMenu.addItem(quitItem)
+        appMenuItem.submenu = appMenu
+
+        NSApp.mainMenu = mainMenu
     }
 
     private func performStartup() async {
