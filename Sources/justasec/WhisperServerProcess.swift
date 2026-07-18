@@ -136,58 +136,67 @@ public final class WhisperServerProcess: Sendable, WhisperServerProcessProtocol 
 
     public func terminate() {
         let captured = state.withLock { s -> Process? in
+            guard let p = s.process else { return nil }
             defer { s.process = nil; s.isRunning = false }
-            return s.process
+            return p
         }
-        guard let proc = captured, proc.isRunning else {
-            if let outPipe = captured?.standardOutput as? Pipe {
-                outPipe.fileHandleForReading.readabilityHandler = nil
-            }
-            if let errPipe = captured?.standardError as? Pipe {
-                errPipe.fileHandleForReading.readabilityHandler = nil
-            }
+        guard let proc = captured else { return }
+        guard proc.isRunning else {
+            cleanupPipeHandlers(proc)
             return
         }
+        cleanupPipeHandlers(proc)
+        // SIG_IGN is inherited from the parent (proven empirically), so
+        // interrupt()/terminate() may have NO effect on the child.
+        // We try them briefly for cooperative processes, but SIGKILL is
+        // the only guaranteed path on this host.
+        proc.interrupt()
+        if pollExit(proc, timeout: 0.5) { return }
+        proc.terminate()
+        if pollExit(proc, timeout: 0.5) { return }
+        kill(pid_t(proc.processIdentifier), SIGKILL)
+        proc.waitUntilExit()
+    }
+
+    public func terminateAsync() async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            Task.detached {
+                self.terminate()
+                cont.resume()
+            }
+        }
+    }
+
+    private func cleanupPipeHandlers(_ proc: Process) {
         if let outPipe = proc.standardOutput as? Pipe {
             outPipe.fileHandleForReading.readabilityHandler = nil
         }
         if let errPipe = proc.standardError as? Pipe {
             errPipe.fileHandleForReading.readabilityHandler = nil
         }
+    }
 
-        let group = DispatchGroup()
-        group.enter()
-        proc.terminationHandler = { _ in group.leave() }
-
-        proc.interrupt()
-        let deadline = DispatchTime.now() + .seconds(3)
-        let waitResult = group.wait(timeout: deadline)
-
-        if waitResult == .timedOut && proc.isRunning {
-            proc.terminate()
-            let _ = group.wait(timeout: .now() + .seconds(2))
+    private func pollExit(_ proc: Process, timeout: TimeInterval) -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while ProcessInfo.processInfo.systemUptime < deadline, proc.isRunning {
+            usleep(50_000)
         }
-
-        if proc.isRunning {
-            proc.waitUntilExit()
-        }
-        proc.terminationHandler = nil
+        return !proc.isRunning
     }
 
     func forceTerminate() {
-        let captured = state.withLock { s -> Process? in
+        guard let proc = state.withLock({ s -> Process? in
             defer { s.process = nil; s.isRunning = false }
-            let proc = s.process
-            if let outFH = proc?.standardOutput as? Pipe {
-                outFH.fileHandleForReading.readabilityHandler = nil
-            }
-            if let errFH = proc?.standardError as? Pipe {
-                errFH.fileHandleForReading.readabilityHandler = nil
-            }
-            return proc
+            return s.process
+        }) else { return }
+        guard proc.isRunning else { return }
+        cleanupPipeHandlers(proc)
+        // SIG_IGN is inherited; SIGTERM/SIGINT have no effect.  Send SIGKILL directly.
+        kill(pid_t(proc.processIdentifier), SIGKILL)
+        if !pollExit(proc, timeout: 1.0) {
+            // Last-reset synchronous reap (bounded because process is already killed)
+            proc.waitUntilExit()
         }
-        captured?.terminate()
-        captured?.waitUntilExit()
     }
 
     public func checkReadiness(timeout: TimeInterval) async -> Bool {

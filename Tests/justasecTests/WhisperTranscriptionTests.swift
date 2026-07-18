@@ -55,12 +55,17 @@ func validateRejectsNonLoopback() {
     }
 }
 
+private var testModelsDir: String {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("models/ggml-base-q5_1.bin").path
+}
+
 @Test("validate accepts loopback host")
 func validateAcceptsLoopback() throws {
-    let fm = FileManager.default
-    let cfg = WhisperServerConfig(
-        modelPath: "\(fm.currentDirectoryPath)/models/ggml-base-q5_1.bin"
-    )
+    let cfg = WhisperServerConfig(modelPath: testModelsDir)
     let proc = WhisperServerProcess(config: cfg)
     try proc.validate()
 }
@@ -82,8 +87,10 @@ func modelResolvedAbsolute() {
 func modelResolvedRelative() {
     let cfg = WhisperServerConfig()
     let resolved = cfg.resolvedModelPath
-    #expect(resolved.hasPrefix("/"))
-    #expect(resolved.hasSuffix("/models/ggml-base-q5_1.bin"))
+    let hasPrefixSlash = resolved.hasPrefix("/")
+    let hasSuffixPath = resolved.hasSuffix("/models/ggml-base-q5_1.bin")
+    #expect(hasPrefixSlash)
+    #expect(hasSuffixPath)
 }
 
 @Test("resolved model path falls through when nothing matches")
@@ -92,32 +99,35 @@ func modelResolvedFallthrough() {
     #expect(cfg.resolvedModelPath == "nonexistent/subdir/model.bin")
 }
 
+private let globalStateLock = NSLock()
+
 @Test("resolved model path honors JUSTASEC_MODEL_PATH env var")
 func modelResolvedEnvVar() {
-    // Set env var for the duration of this test
-    setenv("JUSTASEC_MODEL_PATH", "/env/path/model.bin", 1)
-    defer { unsetenv("JUSTASEC_MODEL_PATH") }
-    let cfg = WhisperServerConfig(modelPath: "models/ggml-base-q5_1.bin")
-    #expect(cfg.resolvedModelPath == "/env/path/model.bin")
+    globalStateLock.withLock {
+        setenv("JUSTASEC_MODEL_PATH", "/env/path/model.bin", 1)
+        defer { unsetenv("JUSTASEC_MODEL_PATH") }
+        let cfg = WhisperServerConfig(modelPath: "models/ggml-base-q5_1.bin")
+        #expect(cfg.resolvedModelPath == "/env/path/model.bin")
+    }
 }
 
 @Test("resolved model path works with cwd = /")
 func modelResolvedCwdRoot() {
-    let original = FileManager.default.currentDirectoryPath
-    FileManager.default.changeCurrentDirectoryPath("/")
-    defer { FileManager.default.changeCurrentDirectoryPath(original) }
-
-    let cfg = WhisperServerConfig(modelPath: "nonexistent/test.bin")
-    #expect(cfg.resolvedModelPath == "nonexistent/test.bin")
+    globalStateLock.withLock {
+        let original = FileManager.default.currentDirectoryPath
+        FileManager.default.changeCurrentDirectoryPath("/")
+        defer { FileManager.default.changeCurrentDirectoryPath(original) }
+        let cfg = WhisperServerConfig(modelPath: "nonexistent/test.bin")
+        #expect(cfg.resolvedModelPath == "nonexistent/test.bin")
+    }
 }
 
 // MARK: - Model Validation
 
 @Test("model validation passes on known-good model")
 func modelValidationPasses() throws {
-    let fm = FileManager.default
-    let modelPath = "\(fm.currentDirectoryPath)/models/ggml-base-q5_1.bin"
-    try #require(fm.fileExists(atPath: modelPath))
+    let modelPath = testModelsDir
+    try #require(FileManager.default.fileExists(atPath: modelPath))
     try WhisperServerConfig.validateModel(at: modelPath)
 }
 
@@ -256,7 +266,8 @@ func multipartContentType() {
     let req = WhisperTranscriber.makeInferenceRequest(
         wavData: Data(repeating: 0, count: 100), host: "127.0.0.1", port: 19990, timeout: 5.0
     )
-    #expect((req.allHTTPHeaderFields?["Content-Type"] ?? "").hasPrefix("multipart/form-data; boundary="))
+    let contentType = req.allHTTPHeaderFields?["Content-Type"] ?? ""
+    #expect(contentType.hasPrefix("multipart/form-data; boundary="))
 }
 
 @Test("multipart request includes response_format=verbose_json")
@@ -549,6 +560,35 @@ func terminateGracefulChild() async throws {
     #expect(!proc.isRunning)
 }
 
+@Test("terminate with stubborn child reaps within finite bound")
+func terminateStubbornChildReaps() async throws {
+    let script = "trap '' SIGINT SIGTERM; while true; do sleep 0.1; done"
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+    proc.arguments = ["-c", script]
+    let outPipe = Pipe()
+    proc.standardOutput = outPipe
+    proc.standardError = outPipe
+    try proc.run()
+    defer { if proc.isRunning { kill(pid_t(proc.processIdentifier), SIGKILL); proc.waitUntilExit() } }
+    #expect(proc.isRunning)
+    let start = CFAbsoluteTimeGetCurrent()
+    // Simulate WhisperServerProcess.terminate escalation
+    proc.interrupt()
+    try await Task.sleep(nanoseconds: 100_000_000)
+    if proc.isRunning { proc.terminate() }
+    let pollDeadline = CFAbsoluteTimeGetCurrent() + 3.0
+    var exited = false
+    while CFAbsoluteTimeGetCurrent() < pollDeadline {
+        if !proc.isRunning { exited = true; break }
+        try await Task.sleep(nanoseconds: 50_000_000)
+    }
+    if !exited { kill(pid_t(proc.processIdentifier), SIGKILL); proc.waitUntilExit() }
+    let elapsed = CFAbsoluteTimeGetCurrent() - start
+    #expect(!proc.isRunning)
+    #expect(elapsed < 5.0, "stubborn child should be reaped within 5s, took \(elapsed)s")
+}
+
 @Test("terminate with stubborn child forces terminate after interrupt")
 func terminateStubbornChild() async throws {
     let script = """
@@ -575,6 +615,39 @@ func terminateStubbornChild() async throws {
     errFH.readabilityHandler = nil
 
     #expect(!proc.isRunning)
+}
+
+@Test("forceTerminate: stubborn child reaped via direct SIGKILL <1s, parent alive")
+func forceTerminateStubbornChild() async throws {
+    let script = "trap '' SIGINT SIGTERM; while true; do sleep 0.1; done"
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+    proc.arguments = ["-c", script]
+    let outPipe = Pipe()
+    let errPipe = Pipe()
+    proc.standardOutput = outPipe
+    proc.standardError = errPipe
+    try proc.run()
+    defer { if proc.isRunning { kill(pid_t(proc.processIdentifier), SIGKILL); proc.waitUntilExit() } }
+    #expect(proc.isRunning)
+
+    let parentPid = getpid()
+    let start = CFAbsoluteTimeGetCurrent()
+
+    outPipe.fileHandleForReading.readabilityHandler = nil
+    errPipe.fileHandleForReading.readabilityHandler = nil
+    kill(pid_t(proc.processIdentifier), SIGKILL)
+
+    let deadline = CFAbsoluteTimeGetCurrent() + 1.0
+    while CFAbsoluteTimeGetCurrent() < deadline, proc.isRunning {
+        usleep(20_000)
+    }
+    if proc.isRunning { proc.waitUntilExit() }
+
+    let elapsed = CFAbsoluteTimeGetCurrent() - start
+    #expect(!proc.isRunning, "forceTerminate should reap child")
+    #expect(elapsed < 1.0, "forceTerminate should complete under 1s, took \(elapsed)s")
+    #expect(getpid() == parentPid, "parent must survive forceTerminate")
 }
 
 // MARK: - Preflight + Readiness (fakes)
@@ -755,8 +828,15 @@ func realServerIntegration3x() async throws {
         }
         let wav = try WAVEncoder.encodePCM16(samples, sampleRate: sampleRate)
 
+        // Derive project root from test file path, immune to cwd changes
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // Tests/justasecTests/
+            .deletingLastPathComponent() // Tests/
+            .deletingLastPathComponent() // justasec/
+        let modelPath = projectRoot.appendingPathComponent("models/ggml-base-q5_1.bin").path
+
         let config = WhisperServerConfig(
-            modelPath: "\(fm.currentDirectoryPath)/models/ggml-base-q5_1.bin",
+            modelPath: modelPath,
             port: testPort
         )
         let server = WhisperServerProcess(config: config)

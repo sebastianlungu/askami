@@ -50,50 +50,42 @@ public actor AudioTimeline {
 
         while i < segments.count {
             let existing = segments[i]
-
-            if CMTimeCompare(segment.endTime, existing.startTime) <= 0 {
-                break
-            }
-
-            if CMTimeCompare(segment.startTime, existing.endTime) >= 0 {
-                i += 1
-                continue
-            }
+            if CMTimeCompare(segment.endTime, existing.startTime) <= 0 { break }
+            if CMTimeCompare(segment.startTime, existing.endTime) >= 0 { i += 1; continue }
 
             segments.remove(at: i)
-
-            if CMTimeCompare(existing.startTime, segment.startTime) < 0 {
-                let prefixCount = sampleCount(from: existing.startTime, to: segment.startTime, sr: existing.sampleRate)
-                if prefixCount > 0 {
-                    let prefix = Array(existing.samples.prefix(prefixCount))
-                    segments.insert(
-                        AudioSegment(samples: prefix, startTime: existing.startTime, source: existing.source, sampleRate: existing.sampleRate),
-                        at: i)
-                    i += 1
-                }
-            }
-
-            if CMTimeCompare(existing.endTime, segment.endTime) > 0 {
-                let prefixCount = sampleCount(from: existing.startTime, to: segment.endTime, sr: existing.sampleRate)
-                if prefixCount < existing.samples.count {
-                    let suffix = Array(existing.samples.suffix(from: prefixCount))
-                    let suffixStart = CMTimeAdd(existing.startTime, CMTime(value: CMTimeValue(prefixCount), timescale: CMTimeScale(existing.sampleRate)))
-                    postClips.append(
-                        AudioSegment(samples: suffix, startTime: suffixStart, source: existing.source, sampleRate: existing.sampleRate)
-                    )
-                }
-            }
+            i = insertPrefix(of: existing, before: segment, into: &segments, at: i, postClips: &postClips)
+            i = insertSuffix(of: existing, after: segment, into: &segments, at: i, postClips: &postClips)
         }
 
         segments.insert(segment, at: i)
-        i += 1
-
-        for clip in postClips {
-            segments.insert(clip, at: i)
-            i += 1
-        }
-
+        for clip in postClips { i += 1; segments.insert(clip, at: i) }
         coalesce(&segments)
+    }
+
+    private func insertPrefix(of existing: AudioSegment, before segment: AudioSegment, into segments: inout [AudioSegment], at i: Int, postClips: inout [AudioSegment]) -> Int {
+        var idx = i
+        if CMTimeCompare(existing.startTime, segment.startTime) < 0 {
+            let prefixCount = sampleCount(from: existing.startTime, to: segment.startTime, sr: existing.sampleRate)
+            if prefixCount > 0 {
+                let prefix = Array(existing.samples.prefix(prefixCount))
+                segments.insert(AudioSegment(samples: prefix, startTime: existing.startTime, source: existing.source, sampleRate: existing.sampleRate), at: idx)
+                idx += 1
+            }
+        }
+        return idx
+    }
+
+    private func insertSuffix(of existing: AudioSegment, after segment: AudioSegment, into segments: inout [AudioSegment], at i: Int, postClips: inout [AudioSegment]) -> Int {
+        if CMTimeCompare(existing.endTime, segment.endTime) > 0 {
+            let prefixCount = sampleCount(from: existing.startTime, to: segment.endTime, sr: existing.sampleRate)
+            if prefixCount < existing.samples.count {
+                let suffix = Array(existing.samples.suffix(from: prefixCount))
+                let suffixStart = CMTimeAdd(existing.startTime, CMTime(value: CMTimeValue(prefixCount), timescale: CMTimeScale(existing.sampleRate)))
+                postClips.append(AudioSegment(samples: suffix, startTime: suffixStart, source: existing.source, sampleRate: existing.sampleRate))
+            }
+        }
+        return i
     }
 
     // MARK: - Coalesce adjacent compatible segments

@@ -6,32 +6,14 @@ public final class PipelineOrchestrator {
     public private(set) var lastTimings: TimingSnapshot?
     public private(set) var currentPipelineTask: Task<Void, Never>?
 
-    private let snapshotEngine: SnapshotEngineProtocol
-    private let transcriber: TranscriberProtocol
-    private let reasoner: ReasonerProtocol
-    private let speech: SpeechSynthesizerProtocol
-    private let clock: ClockProtocol
-    public let micGate: MicSuppressionGate
-    private let log: LogFunction
+    private let deps: PipelineDependencies
 
     public init(
         stateMachine: LifecycleStateMachine = LifecycleStateMachine(),
-        snapshotEngine: SnapshotEngineProtocol,
-        transcriber: TranscriberProtocol,
-        reasoner: ReasonerProtocol,
-        speech: SpeechSynthesizerProtocol,
-        clock: ClockProtocol = SystemClock(),
-        micGate: MicSuppressionGate = MicSuppressionGate(),
-        log: @escaping LogFunction = { fputs($0, stderr) }
+        dependencies: PipelineDependencies
     ) {
         self.stateMachine = stateMachine
-        self.snapshotEngine = snapshotEngine
-        self.transcriber = transcriber
-        self.reasoner = reasoner
-        self.speech = speech
-        self.clock = clock
-        self.micGate = micGate
-        self.log = log
+        self.deps = dependencies
     }
 
     public func handleTrigger() {
@@ -43,13 +25,7 @@ public final class PipelineOrchestrator {
         AudioFeedback.play(.trigger)
         stateMachine.trigger()
 
-        let runner = PipelineRunner(
-            snapshotEngine: snapshotEngine,
-            transcriber: transcriber,
-            reasoner: reasoner,
-            clock: clock,
-            log: log
-        )
+        let runner = PipelineRunner(dependencies: deps)
 
         currentPipelineTask = Task.detached { [weak self] in
             guard let self else { return }
@@ -59,17 +35,18 @@ public final class PipelineOrchestrator {
 
     nonisolated private func runPipelineOffMain(runner: PipelineRunner) async {
         let startTime = runner.clock.now()
+        var timings = PipelineRunner.StageTimings()
 
         do {
             let captureTime = try await runner.captureTime()
-            let wavData = try await runner.snapshot(before: captureTime)
-            let transcription = try await runner.transcribe(wav: wavData)
-            let answer = try await runner.reason(transcription)
+            let wavData = try await runner.snapshot(before: captureTime, timings: &timings)
+            let transcription = try await runner.transcribe(wav: wavData, timings: &timings)
+            let answer = try await runner.reason(transcription, timings: &timings)
 
             let elapsed = runner.clock.now() - startTime
             runner.log("justasec: time-to-speech \(String(format: "%.3f", elapsed))s\n")
 
-            await self.speakOnMain(answer: answer, totalElapsed: elapsed)
+            await self.speakOnMain(answer: answer, timings: timings, totalElapsed: elapsed)
         } catch let error as PipelineError where error == .silence {
             await self.speakOnMain(errorMessage: "No speech detected.", settle: 0.3)
         } catch {
@@ -79,18 +56,23 @@ public final class PipelineOrchestrator {
     }
 
     nonisolated private func speakOnMain(
-        answer: OpenCodeResult, totalElapsed: TimeInterval
+        answer: OpenCodeResult, timings: PipelineRunner.StageTimings, totalElapsed: TimeInterval
     ) async {
         await MainActor.run { [self] in
-            lastTimings = TimingSnapshot(totalElapsed: totalElapsed)
+            lastTimings = TimingSnapshot(
+                snapshotElapsed: timings.snapshotElapsed,
+                transcriptionElapsed: timings.transcriptionElapsed,
+                reasoningElapsed: timings.reasoningElapsed,
+                totalElapsed: totalElapsed
+            )
         }
         do {
             try await MainActor.run { [self] in
                 try stateMachine.beginSpeaking()
-                micGate.startSuppression()
+                deps.micGate.startSuppression()
             }
-            await speech.speak(answer.answer, language: answer.language)
-            await micGate.endSuppression(after: 0.5)
+            await deps.speech.speak(answer.answer, language: answer.language)
+            await deps.micGate.endSuppression(after: 0.5)
             try await MainActor.run { [self] in
                 try stateMachine.speakingComplete()
             }
@@ -103,10 +85,10 @@ public final class PipelineOrchestrator {
         do {
             try await MainActor.run { [self] in
                 try stateMachine.beginSpeaking()
-                micGate.startSuppression()
+                deps.micGate.startSuppression()
             }
-            await speech.speak(errorMessage, language: "en")
-            await micGate.endSuppression(after: settle)
+            await deps.speech.speak(errorMessage, language: "en")
+            await deps.micGate.endSuppression(after: settle)
             try await MainActor.run { [self] in
                 try stateMachine.speakingComplete()
             }
@@ -136,7 +118,7 @@ public final class PipelineOrchestrator {
 
         await MainActor.run { [self] in
             lastTimings = TimingSnapshot(totalElapsed: totalElapsed)
-            log("justasec: \(logMsg) \(error)\n")
+            deps.log("justasec: \(logMsg) \(error)\n")
         }
 
         await speakOnMain(errorMessage: message, settle: 0.3)

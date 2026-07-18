@@ -1,5 +1,6 @@
 import Foundation
 import CoreMedia
+import os.lock
 @preconcurrency import AVFoundation
 
 // MARK: - Protocol definitions for dependency injection
@@ -74,10 +75,52 @@ public struct TimingSnapshot: Sendable, Equatable {
 
 public typealias LogFunction = @Sendable (String) -> Void
 
-public final class LogCollector: @unchecked Sendable {
-    public var logs: [String] = []
+// MARK: - Cohesive dependency container (≤4 params everywhere)
+
+public struct PipelineDependencies: Sendable {
+    public let snapshotEngine: SnapshotEngineProtocol
+    public let transcriber: TranscriberProtocol
+    public let reasoner: ReasonerProtocol
+    public let speech: SpeechSynthesizerProtocol
+    public let clock: ClockProtocol
+    public let micGate: MicSuppressionGate
+    public let log: LogFunction
+
+    public init(
+        snapshotEngine: SnapshotEngineProtocol,
+        transcriber: TranscriberProtocol,
+        reasoner: ReasonerProtocol,
+        speech: SpeechSynthesizerProtocol,
+        clock: ClockProtocol = SystemClock(),
+        micGate: MicSuppressionGate = MicSuppressionGate(),
+        log: @escaping LogFunction = { fputs($0, stderr) }
+    ) {
+        self.snapshotEngine = snapshotEngine
+        self.transcriber = transcriber
+        self.reasoner = reasoner
+        self.speech = speech
+        self.clock = clock
+        self.micGate = micGate
+        self.log = log
+    }
+}
+
+public final class LogCollector: Sendable {
+    private let lock = OSAllocatedUnfairLock(initialState: [String]())
+
     public init() {}
-    public func append(_ s: String) { logs.append(s) }
+
+    public func append(_ s: String) {
+        lock.withLock { $0.append(s) }
+    }
+
+    public var logs: [String] {
+        lock.withLock { $0 }
+    }
+
+    public func snapshot() -> [String] {
+        lock.withLock { $0 }
+    }
 }
 
 // MARK: - SnapshotEngineFake

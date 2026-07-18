@@ -7,7 +7,8 @@ func bestVoiceEnglish() {
     let voice = bestVoice(for: "english")
     #expect(voice != nil)
     if let v = voice {
-        #expect(v.language.hasPrefix("en"))
+        let isEnglish = v.language.hasPrefix("en")
+    #expect(isEnglish)
     }
 }
 
@@ -16,7 +17,8 @@ func bestVoiceFrench() {
     let voice = bestVoice(for: "french")
     #expect(voice != nil)
     if let v = voice {
-        #expect(v.language.hasPrefix("fr"))
+        let isFrench = v.language.hasPrefix("fr")
+        #expect(isFrench)
     }
 }
 
@@ -25,7 +27,8 @@ func bestVoiceGerman() {
     let voice = bestVoice(for: "german")
     #expect(voice != nil)
     if let v = voice {
-        #expect(v.language.hasPrefix("de"))
+        let isGerman = v.language.hasPrefix("de")
+        #expect(isGerman)
     }
 }
 
@@ -40,7 +43,8 @@ func bestVoiceShortCode() {
     let voice = bestVoice(for: "en")
     #expect(voice != nil)
     if let v = voice {
-        #expect(v.language.hasPrefix("en"))
+        let isEnglish = v.language.hasPrefix("en")
+        #expect(isEnglish)
     }
 }
 
@@ -49,7 +53,8 @@ func bestVoiceLowercase() {
     let voice = bestVoice(for: "French")
     #expect(voice != nil)
     if let v = voice {
-        #expect(v.language.hasPrefix("fr"))
+        let isFrench = v.language.hasPrefix("fr")
+        #expect(isFrench)
     }
 }
 

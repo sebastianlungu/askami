@@ -168,23 +168,35 @@ hardcoded for v0 safety.
 
 ### Known Technical Debt
 
-The following issues are documented in `docs/hoff/debt/` and affect strict
-build gates but do not block normal development:
+The following issues are documented in `docs/hoff/debt/`:
 
-- **`swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors`**
-  emits warnings for `AudioPipeline.swift` callback captures and function-size
-  limits in `AudioConverter.convert` (67 lines > 50), `WAVEncoder.encodePCM16`
-  (51 > 50), and `AudioTimeline.insert` (51 > 50). Normal `swift build` is
-  clean.
+- **`LifecycleStateMachine`** is `@unchecked Sendable` rather than an actor,
+  and there is no cross-process lock to prevent concurrent app instances.
+  (Commit pending — strict concurrency/function-size gates now green.)
 - **OpenCode tool escalation protection** relies on the `OPENCODE_PERMISSION`
   environment variable — an undocumented OpenCode feature that may change. The
   `--pure` flag only disables external plugins, not built-in tools.
-- **`LifecycleStateMachine`** is `@unchecked Sendable` rather than an actor,
-  and there is no cross-process lock to prevent concurrent app instances.
+  **OpenCode child environment is allowlisted**: only runtime essentials (`HOME`,
+  `PATH`, `TMPDIR`, `LANG`/`LC_*`, `XDG_*`) and known provider credential key
+  name prefixes (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AWS_*`, `BEDROCK_*`,
+  `AZURE_OPENAI_*`, `VERTEX_AI_*`, etc.) are forwarded. `DYLD_*`, `LD_*`,
+  `BASH_FUNC_*`, and arbitrary keys are excluded. `OPENCODE_PERMISSION` is
+  force-set to deny-all after filtering. The child also inherits network
+  entitlements and can access the local Whisper endpoint.
+- **SIG_IGN is inherited by Process children on macOS** — the app sets
+  `SIG_IGN` for `SIGINT`/`SIGTERM`, and `whisper-server` (launched via
+  `Process`) inherits this disposition. Consequently `proc.interrupt()` and
+  `proc.terminate()` may have no effect on the child. The termination
+  escalation short-circuits to `SIGKILL` after brief 0.5s waits per signal;
+  direct PID `SIGKILL` is the only guaranteed termination path on this host.
 - **Startup ordering** transitions to `ready` after hotkey registration but
   before capture callbacks have necessarily delivered the first audio samples.
   A trigger during this window may produce "no capture time."
 - **20-second hotkey-to-speech latency target** has not been benchmarked.
+- **TCC permissions** must be manually approved in System Settings; automated
+  reset recovery and permission re-acquisition are out of scope.
+- **ScreenCaptureKit capture exhaustion and recovery** after repeated
+  start/stop cycles is not production-ready.
 
 ### Out of Scope (Not Implemented)
 

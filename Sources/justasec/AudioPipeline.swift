@@ -41,125 +41,98 @@ public struct AudioSegment: Sendable, Equatable {
 
 public struct AudioConverter {
     public static func convert(_ payload: AudioSamplePayload) throws -> AudioSegment {
-        guard payload.format.sampleRate > 0 else {
-            throw AudioPipelineError.unsupportedFormat("zero sampleRate")
-        }
-        guard payload.format.channelCount > 0 else {
-            throw AudioPipelineError.unsupportedFormat("zero channelCount")
-        }
-        guard payload.format.bytesPerFrame > 0 else {
-            throw AudioPipelineError.unsupportedFormat("zero bytesPerFrame")
-        }
-
-        let bytesPerSample = payload.format.bytesPerSample
-        guard bytesPerSample > 0 else {
-            throw AudioPipelineError.unsupportedFormat("invalid bytesPerSample")
-        }
-
+        try validate(payload)
         let bpf = Int(payload.format.bytesPerFrame)
-        guard payload.data.count % bpf == 0 else {
-            throw AudioPipelineError.unsupportedFormat(
-                "data length \(payload.data.count) not divisible by bytesPerFrame \(bpf)"
-            )
-        }
-
         let totalFrames = payload.data.count / bpf
         guard totalFrames > 0 else {
             return AudioSegment(samples: [], startTime: payload.timestamp, source: payload.source, sampleRate: 16000)
         }
-
-        let totalChannels = Int(payload.format.channelCount)
-        var floatSamples = [Float32](repeating: 0, count: totalFrames * totalChannels)
-
-        if payload.format.isFloat && bytesPerSample == 4 {
-            payload.data.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
-                let floats = ptr.bindMemory(to: Float32.self)
-                let copyCount = min(floats.count, floatSamples.count)
-                for i in 0..<copyCount { floatSamples[i] = floats[i] }
-            }
-        } else if !payload.format.isFloat && bytesPerSample == 2 {
-            payload.data.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
-                let ints = ptr.bindMemory(to: Int16.self)
-                let copyCount = min(ints.count, floatSamples.count)
-                for i in 0..<copyCount {
-                    floatSamples[i] = Float32(ints[i]) / Float32(Int16.max)
-                }
-            }
-        } else {
-            throw AudioPipelineError.unsupportedFormat(
-                "float=\(payload.format.isFloat) bytesPerSample=\(bytesPerSample)"
-            )
-        }
-
-        sanitize(&floatSamples)
-
-        let mono: [Float32]
-        if totalChannels > 1 {
-            mono = (0..<totalFrames).map { f in
-                var sum: Float32 = 0
-                for c in 0..<totalChannels { sum += floatSamples[f * totalChannels + c] }
-                return sum / Float32(totalChannels)
-            }
-        } else {
-            mono = floatSamples
-        }
-
+        let floatSamples = sanitize(try decodeSamples(payload, totalFrames: totalFrames))
+        let mono = mixdownToMono(floatSamples, totalFrames: totalFrames, channels: Int(payload.format.channelCount))
         let resampled = try resample(mono, from: payload.format.sampleRate, to: 16000)
         return AudioSegment(samples: resampled, startTime: payload.timestamp, source: payload.source, sampleRate: 16000)
     }
 
-    private static func sanitize(_ samples: inout [Float32]) {
-        for i in samples.indices {
-            if !samples[i].isFinite { samples[i] = 0 }
+    private static func validate(_ payload: AudioSamplePayload) throws {
+        guard payload.format.sampleRate > 0 else { throw AudioPipelineError.unsupportedFormat("zero sampleRate") }
+        guard payload.format.channelCount > 0 else { throw AudioPipelineError.unsupportedFormat("zero channelCount") }
+        guard payload.format.bytesPerFrame > 0 else { throw AudioPipelineError.unsupportedFormat("zero bytesPerFrame") }
+        guard payload.format.bytesPerSample > 0 else { throw AudioPipelineError.unsupportedFormat("invalid bytesPerSample") }
+        let bpf = Int(payload.format.bytesPerFrame)
+        guard payload.data.count % bpf == 0 else {
+            throw AudioPipelineError.unsupportedFormat("data length \(payload.data.count) not divisible by bytesPerFrame \(bpf)")
+        }
+    }
+
+    private static func decodeSamples(_ payload: AudioSamplePayload, totalFrames: Int) throws -> [Float32] {
+        let totalChannels = Int(payload.format.channelCount)
+        let bytesPerSample = payload.format.bytesPerSample
+        var result = [Float32](repeating: 0, count: totalFrames * totalChannels)
+        if payload.format.isFloat && bytesPerSample == 4 {
+            payload.data.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+                let floats = ptr.bindMemory(to: Float32.self)
+                let copyCount = min(floats.count, result.count)
+                for i in 0..<copyCount { result[i] = floats[i] }
+            }
+        } else if !payload.format.isFloat && bytesPerSample == 2 {
+            payload.data.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+                let ints = ptr.bindMemory(to: Int16.self)
+                let copyCount = min(ints.count, result.count)
+                for i in 0..<copyCount { result[i] = Float32(ints[i]) / Float32(Int16.max) }
+            }
+        } else {
+            throw AudioPipelineError.unsupportedFormat("float=\(payload.format.isFloat) bytesPerSample=\(bytesPerSample)")
+        }
+        return result
+    }
+
+    private static func sanitize(_ samples: [Float32]) -> [Float32] {
+        var s = samples
+        for i in s.indices { if !s[i].isFinite { s[i] = 0 } }
+        return s
+    }
+
+    private static func mixdownToMono(_ samples: [Float32], totalFrames: Int, channels: Int) -> [Float32] {
+        guard channels > 1 else { return samples }
+        return (0..<totalFrames).map { f in
+            var sum: Float32 = 0
+            for c in 0..<channels { sum += samples[f * channels + c] }
+            return sum / Float32(channels)
         }
     }
 
     private static func resample(_ input: [Float32], from: Float64, to: Float64) throws -> [Float32] {
         guard from != to else { return input }
-        guard from > 0, to > 0 else {
-            throw AudioPipelineError.conversionFailed("invalid sample rate")
-        }
+        guard from > 0, to > 0 else { throw AudioPipelineError.conversionFailed("invalid sample rate") }
         guard !input.isEmpty else { return [] }
-
         let inputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: from, channels: 1, interleaved: false)!
         let outputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: to, channels: 1, interleaved: false)!
-
         guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
             throw AudioPipelineError.conversionFailed("cannot create converter")
         }
-
         let inputFrameCount = AVAudioFrameCount(input.count)
         let outputCapacity = AVAudioFrameCount(Double(input.count) * to / from) + 1
-
         guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: inputFrameCount) else {
             throw AudioPipelineError.conversionFailed("cannot create input buffer")
         }
         inputBuffer.frameLength = inputFrameCount
         let inputCh = inputBuffer.floatChannelData!
         memcpy(inputCh[0], input, input.count * MemoryLayout<Float32>.stride)
-
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputCapacity) else {
             throw AudioPipelineError.conversionFailed("cannot create output buffer")
         }
-
         var convError: NSError?
-        var hasProvidedInput = false
+        let providedLock = OSAllocatedUnfairLock(initialState: false)
         let status = converter.convert(to: outputBuffer, error: &convError) { _, outStatus in
-            guard !hasProvidedInput else {
-                outStatus.pointee = .endOfStream
-                return nil
-            }
-            hasProvidedInput = true
+            let alreadyProvided = providedLock.withLock { $0 }
+            guard !alreadyProvided else { outStatus.pointee = .endOfStream; return nil }
+            providedLock.withLock { $0 = true }
             outStatus.pointee = .haveData
             return inputBuffer
         }
-
-        guard status != AVAudioConverterOutputStatus.error else {
-            throw AudioPipelineError.conversionFailed(
-                "conversion: \(convError?.localizedDescription ?? "unknown")"
-            )
+        guard status != .error else {
+            throw AudioPipelineError.conversionFailed("conversion: \(convError?.localizedDescription ?? "unknown")")
         }
-
         let frameLength = Int(outputBuffer.frameLength)
         let outputCh = outputBuffer.floatChannelData!
         return Array(UnsafeBufferPointer(start: outputCh[0], count: frameLength))
@@ -201,31 +174,27 @@ public struct EnergyGate {
 
 public struct WAVEncoder {
     public static func encodePCM16(_ samples: [Float32], sampleRate: Int) throws -> Data {
+        let dataBytes = try computeDataByteCount(samples.count)
+        var wav = Data(capacity: 44 + dataBytes)
+        writeHeader(to: &wav, sampleRate: sampleRate, dataBytes: UInt32(dataBytes))
+        writeSamples(samples, to: &wav)
+        return wav
+    }
+
+    private static func computeDataByteCount(_ count: Int) throws -> Int {
+        let bps = 2
+        let (dataBytes, overflow) = count.multipliedReportingOverflow(by: bps)
+        guard !overflow else { throw AudioPipelineError.overflow("WAV data byte count overflow") }
+        guard dataBytes <= Int(UInt32.max) else { throw AudioPipelineError.overflow("WAV data size exceeds 32-bit RIFF limit") }
+        return dataBytes
+    }
+
+    private static func writeHeader(to wav: inout Data, sampleRate: Int, dataBytes: UInt32) {
         let bitsPerSample: UInt16 = 16
         let numChannels: UInt16 = 1
         let byteRate = UInt32(sampleRate) * UInt32(numChannels) * UInt32(bitsPerSample) / 8
         let blockAlign = UInt16(numChannels) * UInt16(bitsPerSample) / 8
-
-        let bytesPerSampleInt = Int(bitsPerSample / 8)
-        guard bytesPerSampleInt > 0 else {
-            throw AudioPipelineError.overflow("invalid bytes per sample")
-        }
-        let (dataBytes, overflow) = samples.count.multipliedReportingOverflow(by: bytesPerSampleInt)
-        guard !overflow else {
-            throw AudioPipelineError.overflow("WAV data byte count overflow")
-        }
-        guard dataBytes <= Int(UInt32.max) else {
-            throw AudioPipelineError.overflow("WAV data size exceeds 32-bit RIFF limit")
-        }
-
-        let uint32DataBytes = UInt32(dataBytes)
-        let (wavCapacity, capOverflow) = 44.addingReportingOverflow(dataBytes)
-        guard !capOverflow else {
-            throw AudioPipelineError.overflow("WAV capacity overflow")
-        }
-        let fileSize = 36 + uint32DataBytes
-
-        var wav = Data(capacity: wavCapacity)
+        let fileSize = 36 + dataBytes
         wav.append(contentsOf: "RIFF".utf8)
         withUnsafeBytes(of: fileSize.littleEndian) { wav.append(contentsOf: $0) }
         wav.append(contentsOf: "WAVE".utf8)
@@ -241,14 +210,14 @@ public struct WAVEncoder {
         withUnsafeBytes(of: blockAlign.littleEndian) { wav.append(contentsOf: $0) }
         withUnsafeBytes(of: bitsPerSample.littleEndian) { wav.append(contentsOf: $0) }
         wav.append(contentsOf: "data".utf8)
-        withUnsafeBytes(of: uint32DataBytes.littleEndian) { wav.append(contentsOf: $0) }
+        withUnsafeBytes(of: dataBytes.littleEndian) { wav.append(contentsOf: $0) }
+    }
 
+    private static func writeSamples(_ samples: [Float32], to wav: inout Data) {
         for s in samples {
             let clamped = s.isFinite ? s : 0
             var intVal = Int16(clamping: Int(clamped * Float32(Int16.max)))
             withUnsafeBytes(of: &intVal) { wav.append(contentsOf: $0) }
         }
-
-        return wav
     }
 }

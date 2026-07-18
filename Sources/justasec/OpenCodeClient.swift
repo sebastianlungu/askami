@@ -42,6 +42,55 @@ public struct OpenCodeClient: Sendable {
         return "{\(entries),\"*\":\"deny\"}"
     }()
 
+    /// Minimum env var allowlist for OpenCode 1.18.3 child process.
+    /// Keeps runtime essentials and known provider credential key name patterns.
+    /// OPENCODE_* variables are NOT forwarded except for the specifically
+    /// force-set OPENCODE_PERMISSION (deny-all).  HOME/XDG_CONFIG_HOME cover
+    /// OpenCode config and auth storage; explicit OpenCode auth vars are
+    /// not forwarded since the provider credential pattern prefixes handle
+    /// the actual API keys.
+    private static let allowedEnvPrefixes: Set<String> = [
+        "HOME", "PATH", "TMPDIR", "USER", "LOGNAME",
+        "LANG", "LC_",
+        "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
+        "OPENAI_API_KEY", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS",
+        "VERTEX_AI_",
+        "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+        "AWS_DEFAULT_REGION", "AWS_REGION", "AWS_PROFILE",
+        "BEDROCK_",
+        "GROQ_API_KEY",
+        "TOGETHER_API_KEY",
+        "PERPLEXITY_API_KEY",
+        "MISTRAL_API_KEY",
+        "COHERE_API_KEY",
+        "AI21_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "REPLICATE_API_TOKEN",
+        "HUGGINGFACEHUB_API_TOKEN",
+        "AZURE_OPENAI_",
+    ]
+
+    private static let blockedPrefixes: Set<String> = [
+        "DYLD_", "LD_", "BASH_FUNC_", "BASH_FUNC_%%",
+        "OPENCODE_",
+    ]
+
+    /// Build a child-safe environment from the parent, keeping only allowed
+    /// variable name prefixes and blocking dangerous/override categories.
+    /// OPENCODE_PERMISSION is always force-set to deny-all after filtering.
+    public static func buildChildEnv() -> [String: String] {
+        var env = [String: String]()
+        for (key, value) in ProcessInfo.processInfo.environment {
+            guard !blockedPrefixes.contains(where: { key.hasPrefix($0) }) else { continue }
+            guard allowedEnvPrefixes.contains(where: { key == $0 || key.hasPrefix($0) }) else { continue }
+            env[key] = value
+        }
+        env["OPENCODE_PERMISSION"] = denyAllPermissionJSON
+        return env
+    }
+
     public init(config: OpenCodeConfig = OpenCodeConfig()) {
         self.config = config
     }
@@ -96,9 +145,7 @@ public struct OpenCodeClient: Sendable {
             "--format", "json",
         ]
 
-        var env = ProcessInfo.processInfo.environment
-        env["OPENCODE_PERMISSION"] = Self.denyAllPermissionJSON
-        proc.environment = env
+        proc.environment = Self.buildChildEnv()
 
         let inPipe = Pipe()
         proc.standardInput = inPipe
@@ -158,15 +205,14 @@ public struct OpenCodeClient: Sendable {
     private func terminateProcess(_ proc: Process) {
         guard proc.isRunning else { return }
         let pid = proc.processIdentifier
-        // SIGTERM first (bash scripts respond to this but not SIGINT)
         proc.terminate()
         if pollExit(proc, timeout: 2.0) { return }
-        // SIGINT as second attempt
         proc.interrupt()
         if pollExit(proc, timeout: 1.0) { return }
-        // SIGKILL on whole process group
-        let pgid = getpgid(pid)
-        if pgid > 0 { kill(-pgid, SIGKILL) }
+        // Kill only the specific spawned child PID, never an inherited/negative pgroup.
+        // `kill(-pgid, SIGKILL)` is dangerous because if pgid == 0 or matches the
+        // host process group it would kill ourselves.  We did not create a distinct
+        // process group, so we only target the direct child.
         kill(pid, SIGKILL)
         proc.waitUntilExit()
     }

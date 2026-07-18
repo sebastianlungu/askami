@@ -129,9 +129,10 @@ extension AudioCaptureSession: SCStreamDelegate {
     nonisolated public func stream(
         _ stream: SCStream, didStopWithError error: Error
     ) {
-        onError(.streamInterrupted(
-            "Stream stopped: \(error.localizedDescription)"
-        ))
+        let capturedError = error
+        Task { @MainActor in
+            onError(.streamInterrupted("Stream stopped: \(capturedError.localizedDescription)"))
+        }
     }
 }
 

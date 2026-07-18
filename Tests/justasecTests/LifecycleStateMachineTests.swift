@@ -15,21 +15,21 @@ func canTriggerStartup() {
 
 @Test("startup transitions to ready via startupComplete")
 func startupToReady() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     try machine.startupComplete()
     #expect(machine.state == .ready)
 }
 
 @Test("canTrigger is true in ready state")
 func canTriggerReady() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     try machine.startupComplete()
     #expect(machine.canTrigger)
 }
 
 @Test("ready accepts trigger and transitions to processing")
 func readyAcceptsTrigger() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     try machine.startupComplete()
     let accepted = machine.trigger()
     #expect(accepted)
@@ -38,7 +38,7 @@ func readyAcceptsTrigger() throws {
 
 @Test("canTrigger is false in processing")
 func canTriggerProcessing() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     try machine.startupComplete()
     machine.trigger()
     #expect(!machine.canTrigger)
@@ -46,7 +46,7 @@ func canTriggerProcessing() throws {
 
 @Test("trigger returns false when not in ready (startup)")
 func triggerRejectedStartup() {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     let accepted = machine.trigger()
     #expect(!accepted)
     #expect(machine.state == .startup)
@@ -54,7 +54,7 @@ func triggerRejectedStartup() {
 
 @Test("trigger returns false when not in ready (processing)")
 func triggerRejectedProcessing() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     try machine.startupComplete()
     machine.trigger()
     let accepted = machine.trigger()
@@ -64,7 +64,7 @@ func triggerRejectedProcessing() throws {
 
 @Test("trigger returns false when not in ready (speaking)")
 func triggerRejectedSpeaking() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     try machine.startupComplete()
     machine.trigger()
     try machine.beginSpeaking()
@@ -75,7 +75,7 @@ func triggerRejectedSpeaking() throws {
 
 @Test("trigger returns false when not in ready (failed)")
 func triggerRejectedFailed() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     machine.fail()
     let accepted = machine.trigger()
     #expect(!accepted)
@@ -84,7 +84,7 @@ func triggerRejectedFailed() throws {
 
 @Test("processing transitions to speaking via beginSpeaking")
 func processingToSpeaking() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     try machine.startupComplete()
     machine.trigger()
     try machine.beginSpeaking()
@@ -93,7 +93,7 @@ func processingToSpeaking() throws {
 
 @Test("beginSpeaking from non-processing throws")
 func beginSpeakingFromWrongState() {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     #expect(throws: StateTransitionError.self) {
         try machine.beginSpeaking()
     }
@@ -101,7 +101,7 @@ func beginSpeakingFromWrongState() {
 
 @Test("speaking transitions to ready via speakingComplete")
 func speakingToReady() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     try machine.startupComplete()
     machine.trigger()
     try machine.beginSpeaking()
@@ -111,7 +111,7 @@ func speakingToReady() throws {
 
 @Test("speakingComplete from non-speaking throws")
 func speakingCompleteFromWrongState() {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     #expect(throws: StateTransitionError.self) {
         try machine.speakingComplete()
     }
@@ -144,7 +144,7 @@ func failFromAnyState() throws {
 
 @Test("failed transitions to ready via reset")
 func failedToReady() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     machine.fail()
     try machine.reset()
     #expect(machine.state == .ready)
@@ -152,7 +152,7 @@ func failedToReady() throws {
 
 @Test("reset from non-failed throws")
 func resetFromNonFailed() {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     #expect(throws: StateTransitionError.self) {
         try machine.reset()
     }
@@ -160,7 +160,7 @@ func resetFromNonFailed() {
 
 @Test("startupComplete from processing throws")
 func startupCompleteFromProcessing() throws {
-    var machine = LifecycleStateMachine()
+    let machine = LifecycleStateMachine()
     try machine.startupComplete()
     machine.trigger()
     #expect(throws: StateTransitionError.self) {

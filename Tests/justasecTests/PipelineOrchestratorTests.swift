@@ -40,12 +40,14 @@ func readyTriggerExactOnce() async throws {
     let clockFake = ClockFake()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: transcriberFake,
-        reasoner: reasonerFake,
-        speech: speechFake,
-        clock: clockFake,
-        log: { logCollector.append($0) }
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake,
+            speech: speechFake,
+            clock: clockFake,
+            log: { logCollector.append($0) }
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -85,10 +87,12 @@ func busyTriggerDuringProcessing() async throws {
     speechFake.delay = 0.3
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: transcriberFake,
-        reasoner: reasonerFake,
-        speech: speechFake
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake,
+            speech: speechFake
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -131,11 +135,13 @@ func stateTransitionsSuccess() async throws {
 
     let clockFake = ClockFake()
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: transcriberFake,
-        reasoner: reasonerFake,
-        speech: speechFake,
-        clock: clockFake
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake,
+            speech: speechFake,
+            clock: clockFake
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -160,10 +166,12 @@ func silenceProducesError() async throws {
     let speechFake = SpeechSynthesizerFake()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: WhisperTranscriberFake(),
-        reasoner: OpenCodeClientFake(),
-        speech: speechFake
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: WhisperTranscriberFake(),
+            reasoner: OpenCodeClientFake(),
+            speech: speechFake
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -190,11 +198,13 @@ func transcriptionErrorProducesSpeech() async throws {
     let logCollector = LogCollector()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: transcriberFake,
-        reasoner: OpenCodeClientFake(),
-        speech: speechFake,
-        log: { logCollector.append($0) }
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: OpenCodeClientFake(),
+            speech: speechFake,
+            log: { logCollector.append($0) }
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -226,11 +236,13 @@ func openCodeErrorProducesSpeech() async throws {
     let logCollector = LogCollector()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: transcriberFake,
-        reasoner: reasonerFake,
-        speech: speechFake,
-        log: { logCollector.append($0) }
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake,
+            speech: speechFake,
+            log: { logCollector.append($0) }
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -255,11 +267,13 @@ func pipelineErrorProducesSpeech() async throws {
     let logCollector = LogCollector()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: WhisperTranscriberFake(),
-        reasoner: OpenCodeClientFake(),
-        speech: speechFake,
-        log: { logCollector.append($0) }
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: WhisperTranscriberFake(),
+            reasoner: OpenCodeClientFake(),
+            speech: speechFake,
+            log: { logCollector.append($0) }
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -291,10 +305,12 @@ func languagePassThrough() async throws {
     let speechFake = SpeechSynthesizerFake()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: transcriberFake,
-        reasoner: reasonerFake,
-        speech: speechFake
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake,
+            speech: speechFake
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -306,7 +322,7 @@ func languagePassThrough() async throws {
 
 // MARK: - Timings are content-free
 
-@Test("timing logs are content-free and formatted correctly")
+@Test("timing logs are content-free, formatted correctly, and timings populated")
 @MainActor
 func timingLogsContentFree() async throws {
     let snapshotFake = SnapshotEngineFake()
@@ -329,23 +345,27 @@ func timingLogsContentFree() async throws {
     let logCollector = LogCollector()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: transcriberFake,
-        reasoner: reasonerFake,
-        speech: speechFake,
-        clock: clockFake,
-        log: { logCollector.append($0) }
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake,
+            speech: speechFake,
+            clock: clockFake,
+            log: { logCollector.append($0) }
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
     await runPipeline(orchestrator)
 
     for log in logCollector.logs {
-        #expect(log.hasPrefix("justasec: "))
+        let hasPrefix = log.hasPrefix("justasec: ")
+        #expect(hasPrefix)
         #expect(!log.lowercased().contains("Bonjour"))
         #expect(!log.lowercased().contains("hello"))
         #expect(!log.lowercased().contains("answer"))
         #expect(log.count < 80)
+        #expect(log.contains("0.000s") || log.contains("s\n"))
     }
 
     let snapshotLog = logCollector.logs.first { $0.contains("snapshot") }
@@ -357,6 +377,15 @@ func timingLogsContentFree() async throws {
     #expect(transcriptionLog != nil)
     #expect(opencodeLog != nil)
     #expect(ttsLog != nil)
+
+    if let timings = orchestrator.lastTimings {
+        #expect(timings.snapshotElapsed != nil)
+        #expect(timings.transcriptionElapsed != nil)
+        #expect(timings.reasoningElapsed != nil)
+        #expect(timings.totalElapsed != nil)
+    } else {
+        Issue.record("lastTimings should not be nil after pipeline")
+    }
 }
 
 // MARK: - Capture continues during pipeline
@@ -382,10 +411,12 @@ func captureContinuesDuringPipeline() async throws {
     speechFake.delay = 0.2
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: transcriberFake,
-        reasoner: reasonerFake,
-        speech: speechFake
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake,
+            speech: speechFake
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -435,10 +466,12 @@ func errorSpeechNoContent() async throws {
     let speechFake = SpeechSynthesizerFake()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: WhisperTranscriberFake(),
-        reasoner: OpenCodeClientFake(),
-        speech: speechFake
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: WhisperTranscriberFake(),
+            reasoner: OpenCodeClientFake(),
+            speech: speechFake
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -450,6 +483,174 @@ func errorSpeechNoContent() async throws {
     #expect(!message.lowercased().contains("answer"))
     #expect(!message.lowercased().contains("hello"))
     #expect(message.count < 100)
+}
+
+// MARK: - Artifact cleanliness invariant (three-layer evidence)
+
+/// Extension-based artifact signatures never permitted from app source.
+private let artifactExts: Set<String> = ["wav", "aiff", "caf", "mp3", "m4a", "pcm"]
+/// Content-keyword artifact names never permitted from app source.
+private let artifactKeywords: Set<String> = ["transcript", "prompt", "answer", "opencode_result"]
+/// Subdirectory/file prefixes that are accepted (build outputs, model, VCS, OpenCode session store).
+private let allowedPrefixes: Set<String> = [".build", ".git", "models", "Package.resolved", "opencode"]
+
+private func scanForArtifacts(at url: URL) -> [String] {
+    guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
+    var found: [String] = []
+    for case let fileURL as URL in enumerator {
+        let name = fileURL.lastPathComponent
+        let path = fileURL.path
+        let lowerPath = path.lowercased()
+        // Skip accepted locations: build output, VCS, model files, OpenCode store
+        if allowedPrefixes.contains(where: { lowerPath.contains("/\($0.lowercased())/") || lowerPath.contains("/\($0.lowercased())") || lowerPath.hasPrefix($0.lowercased()) }) {
+            continue
+        }
+        let lower = name.lowercased()
+        let hasExt = artifactExts.contains { lower.hasSuffix(".\($0)") }
+        let hasKeyword = artifactKeywords.contains { lower.contains($0) }
+        if hasExt || hasKeyword {
+            found.append(path)
+        }
+    }
+    return found
+}
+
+private var projectRoot: URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+}
+
+@Test("layered: no forbidden artifacts in project root after real WAV generation + pipeline")
+@MainActor
+func layeredArtifactNoTraceAfterSuccess() async throws {
+    // Layer 1: snapshot forbidden-extension artifacts in actual project root
+    let rootScanBefore = scanForArtifacts(at: projectRoot)
+
+    // Layer 2: real SnapshotEngine with real audio conversion/WAV encoding
+    // (exercises AudioConverter, AudioMixer, WAVEncoder — all in-memory)
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("justasec_layered_ok_\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let engine = SnapshotEngine()
+    let payload = float32SinePayload(durationSecs: 1.0, sampleRate: 16000, startTime: .zero)
+    await engine.ingestPayload(payload)
+    let timestamp = CMTime(value: 16000, timescale: 16000)
+    let wav = try #require(await engine.snapshot(before: timestamp, duration: 1.0))
+    #expect(wav.count > 44)
+
+    // Layer 3: successful fake pipeline (Whisper/OpenCode are external)
+    let transcriberFake = WhisperTranscriberFake()
+    transcriberFake.stubResult = .success(WhisperTranscriptionResult(text: "hello", language: "english"))
+    let reasonerFake = OpenCodeClientFake()
+    reasonerFake.stubResult = .success(OpenCodeResult(answer: "Hello.", language: "en"))
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = timestamp
+    snapshotFake.stubSnapshot = .success(wav)
+    let speechFake = SpeechSynthesizerFake()
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake,
+            speech: speechFake
+        )
+    )
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    // Scan project root again — exact set must match (no new, no missing)
+    let rootScanAfter = scanForArtifacts(at: projectRoot)
+    let beforeSet = Set(rootScanBefore)
+    let afterSet = Set(rootScanAfter)
+    let added = afterSet.subtracting(beforeSet)
+    let removed = beforeSet.subtracting(afterSet)
+    #expect(added.isEmpty, "new artifacts appeared in project root: \(added)")
+    #expect(removed.isEmpty, "artifacts disappeared from project root: \(removed)")
+
+    // Layer 4: TMPDIR must still be empty (run-time never writes there)
+    let tmpAfter = try FileManager.default.contentsOfDirectory(atPath: tmp.path)
+    #expect(tmpAfter.isEmpty, "unexpected files in isolation tmpdir: \(tmpAfter)")
+}
+
+@Test("layered: no forbidden artifacts after failed pipeline (silence)")
+@MainActor
+func layeredArtifactNoTraceAfterFailure() async throws {
+    let rootScanBefore = scanForArtifacts(at: projectRoot)
+
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("justasec_layered_fail_\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(nil)
+    let speechFake = SpeechSynthesizerFake()
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: WhisperTranscriberFake(),
+            reasoner: OpenCodeClientFake(),
+            speech: speechFake
+        )
+    )
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    let rootScanAfter = scanForArtifacts(at: projectRoot)
+    let beforeSet = Set(rootScanBefore)
+    let afterSet = Set(rootScanAfter)
+    let added = afterSet.subtracting(beforeSet)
+    let removed = beforeSet.subtracting(afterSet)
+    #expect(added.isEmpty, "new artifacts appeared in project root: \(added)")
+    #expect(removed.isEmpty, "artifacts disappeared from project root: \(removed)")
+
+    let tmpAfter = try FileManager.default.contentsOfDirectory(atPath: tmp.path)
+    #expect(tmpAfter.isEmpty, "unexpected files in isolation tmpdir: \(tmpAfter)")
+}
+
+@Test("source-boundary: production source files never call file-write APIs",
+      .enabled(if: FileManager.default.fileExists(atPath: "/usr/bin/grep")))
+func sourceBoundaryNoFileWriteAPIs() throws {
+    let srcDir = projectRoot.appendingPathComponent("Sources/justasec").path
+    // Whitelist: file paths and symbols that intentionally produce Data (not write to disk)
+    let allowedPaths = ["AudioPipeline.swift", "JustasecApp.swift", "WhisperServerProcess.swift", "OpenCodeClient.swift"]
+    let allowedSymbols = ["readDataToEndOfFile", "readToEnd", "readabilityHandler", "availableData",
+                           "writeStdin", "writeSamples", "writeHeader"]
+    let forbiddenPatterns = [
+        #"\.write\("#,        // Data.write(to:…), NSData.write(toFile:…)
+        #"createFile\("#,      // FileManager.createFile
+        #"write\(toFile:"#,    // NSString/NSData writing
+        #"OutputStream\("#,    // OutputStream init
+    ]
+    for pattern in forbiddenPatterns {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/grep")
+        proc.arguments = ["-rn", pattern, srcDir, "--include=*.swift"]
+        let out = Pipe()
+        proc.standardOutput = out
+        proc.standardError = FileHandle.nullDevice
+        try proc.run()
+        proc.waitUntilExit()
+        if proc.terminationStatus == 0 {
+            let matches = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let filtered = matches.components(separatedBy: "\n")
+                .filter { line in
+                    guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+                    let lower = line.lowercased()
+                    if allowedPaths.contains(where: { lower.contains($0.lowercased()) }) { return false }
+                    if allowedSymbols.contains(where: { lower.contains($0.lowercased()) }) { return false }
+                    return true
+                }
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !filtered.isEmpty {
+                Issue.record("File-write API found in production source:\n\(filtered)")
+            }
+        }
+    }
 }
 
 // MARK: - No queue
@@ -470,10 +671,12 @@ func noQueueDuringSpeaking() async throws {
     speechFake.delay = 0.3
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: WhisperTranscriberFake(),
-        reasoner: reasonerFake,
-        speech: speechFake
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: WhisperTranscriberFake(),
+            reasoner: reasonerFake,
+            speech: speechFake
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -511,11 +714,13 @@ func micSuppressionDuringSpeaking() async throws {
 
     let micGate = MicSuppressionGate()
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: WhisperTranscriberFake(),
-        reasoner: reasonerFake,
-        speech: speechFake,
-        micGate: micGate
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: WhisperTranscriberFake(),
+            reasoner: reasonerFake,
+            speech: speechFake,
+            micGate: micGate
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
@@ -547,17 +752,18 @@ func pipelineOffMainActor() async throws {
     let speechFake = SpeechSynthesizerFake()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: transcriberFake,
-        reasoner: reasonerFake,
-        speech: speechFake
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: transcriberFake,
+            reasoner: reasonerFake,
+            speech: speechFake
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()
 
     orchestrator.handleTrigger()
     #expect(orchestrator.currentPipelineTask != nil)
-    let isDetached = orchestrator.currentPipelineTask?.isCancelled == false
 
     if let task = orchestrator.currentPipelineTask {
         await task.value
@@ -579,10 +785,12 @@ func runtimeCaptureFailure() async throws {
     let speechFake = SpeechSynthesizerFake()
 
     let orchestrator = PipelineOrchestrator(
-        snapshotEngine: snapshotFake,
-        transcriber: WhisperTranscriberFake(),
-        reasoner: OpenCodeClientFake(),
-        speech: speechFake
+        dependencies: PipelineDependencies(
+            snapshotEngine: snapshotFake,
+            transcriber: WhisperTranscriberFake(),
+            reasoner: OpenCodeClientFake(),
+            speech: speechFake
+        )
     )
 
     try orchestrator.stateMachine.startupComplete()

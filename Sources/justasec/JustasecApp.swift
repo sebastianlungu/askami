@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import Dispatch
+import os.lock
 
 @MainActor
 public final class JustasecApp: NSObject, NSApplicationDelegate {
@@ -23,14 +25,19 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     private var whisperServer: WhisperServerProcess?
     private var startupTask: Task<Void, Never>?
 
+    private var isTerminating = false
+    private let terminationDone = OSAllocatedUnfairLock(initialState: false)
+
     private lazy var orchestrator: PipelineOrchestrator = {
         PipelineOrchestrator(
             stateMachine: lifecycle,
-            snapshotEngine: snapshotEngine,
-            transcriber: WhisperTranscriber(),
-            reasoner: OpenCodeClient(),
-            speech: speechSynth,
-            micGate: micSuppressionGate
+            dependencies: PipelineDependencies(
+                snapshotEngine: snapshotEngine,
+                transcriber: WhisperTranscriber(),
+                reasoner: OpenCodeClient(),
+                speech: speechSynth,
+                micGate: micSuppressionGate
+            )
         )
     }()
 
@@ -58,23 +65,62 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    public func applicationWillTerminate(_ notification: Notification) {
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !isTerminating else { return .terminateNow }
+        isTerminating = true
+
         startupTask?.cancel()
         startupTask = nil
         hotkeyController.unregister()
         orchestrator.currentPipelineTask?.cancel()
-        Task { @MainActor [weak self] in
-            await self?.captureSession?.stop()
-        }
-        whisperServer?.terminate()
-        whisperServer = nil
-        fputs("justasec: terminated\n", stderr)
         AudioFeedback.dispose()
+
+        let server = whisperServer
+        whisperServer = nil
+        let session = captureSession
+        captureSession = nil
+
+        Task {
+            let fallback = Task.detached { [done = terminationDone] in
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard !done.withLock({ $0 }) else { return }
+                fputs("justasec: force exit after timeout\n", stderr)
+                exit(1)
+            }
+
+            if let session = session {
+                await session.stop()
+            }
+            await server?.terminateAsync()
+            terminationDone.withLock { $0 = true }
+            fallback.cancel()
+
+            fputs("justasec: terminated\n", stderr)
+            await MainActor.run {
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+        }
+
+        return .terminateLater
+    }
+
+    public func applicationWillTerminate(_ notification: Notification) {
+        if !isTerminating {
+            isTerminating = true
+            startupTask?.cancel()
+            hotkeyController.unregister()
+            orchestrator.currentPipelineTask?.cancel()
+            AudioFeedback.dispose()
+            whisperServer?.forceTerminate()
+            whisperServer = nil
+            captureSession = nil
+        }
+        fputs("justasec: terminated\n", stderr)
     }
 
     private func performStartup() async {
         do {
-            try startWhisperServer()
+            try await startWhisperServer()
         } catch {
             await failStartup("Startup failed: \(error)")
             return
@@ -117,15 +163,18 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     }
 
     private func startCapture() async -> Bool {
-        let engine = snapshotEngine
-        let gate = micSuppressionGate
         let session = AudioCaptureSession(
-            onSample: { payload in
-                guard !gate.shouldDiscard(source: payload.source) else { return }
-                Task { await engine.ingestPayload(payload) }
+            onSample: { [weak self] payload in
+                guard let self, !self.micSuppressionGate.shouldDiscard(source: payload.source) else { return }
+                Task { await self.snapshotEngine.ingestPayload(payload) }
             },
-            onError: { error in
+            onError: { [weak self] error in
                 fputs("justasec: capture error: \(error)\n", stderr)
+                Task { @MainActor in
+                    self?.captureSession = nil
+                    self?.lifecycle.fail()
+                    await self?.speechSynth.speak("Capture failed.", language: "en")
+                }
             },
             onFormatChange: { format, source in
                 fputs("justasec: \(source.rawValue) format change: \(Int(format.sampleRate))Hz \(format.channelCount)ch\n", stderr)
@@ -156,11 +205,13 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         return true
     }
 
-    private func startWhisperServer() throws {
+    private func startWhisperServer() async throws {
         let config = WhisperServerConfig()
         let server = WhisperServerProcess(config: config)
-        try server.validate()
-        try server.launch()
+        try await Task.detached {
+            try server.validate()
+            try server.launch()
+        }.value
         self.whisperServer = server
         fputs("justasec: whisper server started\n", stderr)
     }
