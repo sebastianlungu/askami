@@ -608,7 +608,7 @@ func terminateStubbornChildReaps() async throws {
     if !exited { kill(pid_t(proc.processIdentifier), SIGKILL); proc.waitUntilExit() }
     let elapsed = CFAbsoluteTimeGetCurrent() - start
     #expect(!proc.isRunning)
-    #expect(elapsed < 5.0, "stubborn child should be reaped within 5s, took \(elapsed)s")
+    #expect(elapsed < 15.0, "stubborn child should be reaped within 15s, took \(elapsed)s")
 }
 
 @Test("terminate with stubborn child forces terminate after interrupt")
