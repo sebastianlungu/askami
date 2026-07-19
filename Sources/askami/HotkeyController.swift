@@ -51,7 +51,7 @@ public final class HotkeyController {
             if let token = registrar.register(keyCode: ShortcutValue.default.keyCode, modifiers: ShortcutValue.default.modifiers, handler: handler) {
                 activeToken = token
                 preferenceStore.saveShortcut(.default)
-                fputs("askami: hotkey fallback to Control-Option-Space\n", stderr)
+                fputs("askami: hotkey fallback to Option-Z\n", stderr)
                 return true
             }
         }

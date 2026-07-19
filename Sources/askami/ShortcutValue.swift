@@ -6,8 +6,8 @@ public struct ShortcutValue: Sendable, Equatable {
     public let modifiers: UInt32
 
     public static let `default` = ShortcutValue(
-        keyCode: UInt32(kVK_Space),
-        modifiers: UInt32(controlKey) | UInt32(optionKey)
+        keyCode: UInt32(kVK_ANSI_Z),
+        modifiers: UInt32(optionKey)
     )
 
     public init(keyCode: UInt32, modifiers: UInt32) {

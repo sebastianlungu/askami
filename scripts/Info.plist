@@ -23,8 +23,8 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>askami listens to the microphone to capture the latest 30 seconds of conversation for local transcription when triggered by a hotkey.</string>
+    <string>Askami captures the last 30 seconds of conversation so you can ask a question about what was just said — audio stays on your Mac and is never recorded to disk.</string>
     <key>NSSystemAudioUsageDescription</key>
-    <string>askami captures system audio to include computer playback in the latest 30 seconds of conversation for local transcription when triggered by a hotkey.</string>
+    <string>Askami captures system audio (music, calls, video playback) to include it in the 30-second memory buffer — all processing stays on your Mac.</string>
 </dict>
 </plist>

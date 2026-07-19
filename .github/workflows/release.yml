@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app 2>/dev/null || echo "using default Xcode"
+      - name: Prepare model
+        run: bash scripts/setup.sh
+      - name: Build release bundle
+        run: bash scripts/build.sh
+      - name: Package
+        run: |
+          cd .build
+          ditto -c -k --sequesterRsrc --keepParent askami.app askami-${{ github.ref_name }}.zip
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes "See [README](https://github.com/${{ github.repository }}) for setup instructions." \
+            ".build/askami-${{ github.ref_name }}.zip"

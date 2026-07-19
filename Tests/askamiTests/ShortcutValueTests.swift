@@ -2,10 +2,10 @@ import Testing
 import Carbon
 @testable import askami
 
-@Test("default shortcut is Control-Option-Space")
+@Test("default shortcut is Option-Z")
 func defaultShortcut() {
-    #expect(ShortcutValue.default.keyCode == UInt32(kVK_Space))
-    #expect(ShortcutValue.default.modifiers == (UInt32(controlKey) | UInt32(optionKey)))
+    #expect(ShortcutValue.default.keyCode == UInt32(kVK_ANSI_Z))
+    #expect(ShortcutValue.default.modifiers == UInt32(optionKey))
 }
 
 @Test("valid shortcut requires at least one modifier")
@@ -98,9 +98,9 @@ func allFourModifiersPlusKeyValid() {
 
 // MARK: - Display String
 
-@Test("default display string shows Control-Option-Space")
+@Test("default display string shows Option-Z")
 func defaultDisplayString() {
-    #expect(ShortcutValue.default.displayString == "\u{2303}\u{2325}Space")
+    #expect(ShortcutValue.default.displayString == "\u{2325}Z")
 }
 
 @Test("display string shows Control-Command-A")
