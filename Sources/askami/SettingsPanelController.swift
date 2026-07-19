@@ -20,16 +20,16 @@ public final class SettingsPanelController: NSObject {
 
         let contentRect = NSRect(x: 0, y: 0, width: 320, height: 140)
         window = NSWindow(contentRect: contentRect, styleMask: [.titled, .closable], backing: .buffered, defer: true)
-        window.title = "JustASec"
+        window.title = "Askami"
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.setContentSize(contentRect.size)
 
         recorderView = ShortcutRecorderView(shortcut: initialShortcut)
 
-        quitButton = NSButton(title: "Quit JustASec", target: nil, action: nil)
+        quitButton = NSButton(title: "Quit Askami", target: nil, action: nil)
         quitButton.bezelStyle = .push
-        quitButton.setAccessibilityLabel("Quit JustASec")
+        quitButton.setAccessibilityLabel("Quit Askami")
 
         errorLabel = NSTextField(labelWithString: "")
         errorLabel.textColor = .systemRed

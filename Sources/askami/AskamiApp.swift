@@ -4,8 +4,8 @@ import Dispatch
 import os.lock
 
 @MainActor
-public final class JustasecApp: NSObject, NSApplicationDelegate {
-    public static let bundleIdentifier = "com.sebastianlungu.justasec"
+public final class AskamiApp: NSObject, NSApplicationDelegate {
+    public static let bundleIdentifier = "com.sebastianlungu.askami"
     public static let preferredActivationPolicy: NSApplication.ActivationPolicy = .accessory
 
     private static let requiredTools: [(name: String, path: String, arg: String)] = [
@@ -19,14 +19,14 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
     public let dockStatusPresenter = DockStatusPresenter(isDockPresentationEnabled: false)
     internal lazy var statusItem: NSStatusItem = {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.setAccessibilityLabel("JustASec")
+        item.button?.setAccessibilityLabel("Askami")
         return item
     }()
     private lazy var statusLabelItem = NSMenuItem(title: "Status: Launching", action: nil, keyEquivalent: "")
     private lazy var shortcutLabelItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let lifecycle = LifecycleStateMachine()
     private let snapshotEngine = SnapshotEngine(onError: { error in
-        fputs("justasec: pipeline error — \(error)\n", stderr)
+        fputs("askami: pipeline error — \(error)\n", stderr)
     })
     private let micSuppressionGate = MicSuppressionGate()
     private let speechSynth = SpeechSynthesizerActor()
@@ -118,7 +118,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             let fallback = Task.detached { [done = terminationDone] in
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
                 guard !done.withLock({ $0 }) else { return }
-                fputs("justasec: force exit after timeout\n", stderr)
+                fputs("askami: force exit after timeout\n", stderr)
                 exit(1)
             }
 
@@ -129,7 +129,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             terminationDone.withLock { $0 = true }
             fallback.cancel()
 
-            fputs("justasec: terminated\n", stderr)
+            fputs("askami: terminated\n", stderr)
             await MainActor.run {
                 NSApp.reply(toApplicationShouldTerminate: true)
             }
@@ -150,7 +150,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             whisperServer = nil
             captureSession = nil
         }
-        fputs("justasec: terminated\n", stderr)
+        fputs("askami: terminated\n", stderr)
     }
 
     private func setupStatusItem() {
@@ -166,7 +166,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         settingsItem.keyEquivalentModifierMask = .command
 
         let quitItem = NSMenuItem(
-            title: "Quit JustASec",
+            title:     "Quit Askami",
             action: #selector(NSApp.terminate(_:)),
             keyEquivalent: "q"
         )
@@ -197,8 +197,8 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         img?.isTemplate = true
         let cfg = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
         statusItem.button?.image = img?.withSymbolConfiguration(cfg)
-        statusItem.button?.toolTip = "JustASec — \(status.rawValue)"
-        statusItem.button?.setAccessibilityLabel("JustASec, \(status.rawValue)")
+        statusItem.button?.toolTip = "Askami — \(status.rawValue)"
+        statusItem.button?.setAccessibilityLabel("Askami, \(status.rawValue)")
         statusLabelItem.title = "Status: \(status.rawValue)"
     }
 
@@ -233,11 +233,11 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
         }
 
         dockStatusPresenter.transition(to: .listening)
-        fputs("justasec: ready\n", stderr)
+        fputs("askami: ready\n", stderr)
     }
 
     private func failStartup(_ message: String) async {
-        fputs("justasec: startup failed — \(message)\n", stderr)
+        fputs("askami: startup failed — \(message)\n", stderr)
         lifecycle.fail()
         dockStatusPresenter.transition(to: .error)
         _ = await speechSynth.speak("Startup failed.", language: "en")
@@ -255,7 +255,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
                 Task { await self.snapshotEngine.ingestPayload(payload) }
             },
             onError: { [weak self] error in
-                fputs("justasec: capture error: \(error)\n", stderr)
+                fputs("askami: capture error: \(error)\n", stderr)
                 Task { @MainActor in
                     self?.orchestrator.currentPipelineTask?.cancel()
                     self?.captureSession = nil
@@ -265,31 +265,31 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
                 }
             },
             onFormatChange: { format, source in
-                fputs("justasec: \(source.rawValue) format change: \(Int(format.sampleRate))Hz \(format.channelCount)ch\n", stderr)
+                fputs("askami: \(source.rawValue) format change: \(Int(format.sampleRate))Hz \(format.channelCount)ch\n", stderr)
             }
         )
         self.captureSession = session
 
         do {
             try await session.start()
-            fputs("justasec: audio capture started\n", stderr)
+            fputs("askami: audio capture started\n", stderr)
             return true
         } catch let error as AudioCaptureError {
-            fputs("justasec: capture failed to start - \(error)\n", stderr)
+            fputs("askami: capture failed to start - \(error)\n", stderr)
             return false
         } catch {
-            fputs("justasec: capture failed to start - \(error.localizedDescription)\n", stderr)
+            fputs("askami: capture failed to start - \(error.localizedDescription)\n", stderr)
             return false
         }
     }
 
     private func registerHotkey() -> Bool {
-        fputs("justasec: registering hotkey \(hotkeyController.currentShortcut.displayString)\n", stderr)
+        fputs("askami: registering hotkey \(hotkeyController.currentShortcut.displayString)\n", stderr)
         guard hotkeyController.register() else {
-            fputs("justasec: hotkey registration failed\n", stderr)
+            fputs("askami: hotkey registration failed\n", stderr)
             return false
         }
-        fputs("justasec: hotkey registered\n", stderr)
+        fputs("askami: hotkey registered\n", stderr)
         return true
     }
 
@@ -301,7 +301,7 @@ public final class JustasecApp: NSObject, NSApplicationDelegate {
             try server.launch()
         }.value
         self.whisperServer = server
-        fputs("justasec: whisper server started\n", stderr)
+        fputs("askami: whisper server started\n", stderr)
     }
 
     private func checkToolAvailable(at path: String, with argument: String) -> Bool {

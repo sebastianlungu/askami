@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import justasec
+@testable import askami
 
 // MARK: - Config
 
@@ -103,11 +103,11 @@ func modelResolvedFallthrough() {
 
 private let globalStateLock = NSLock()
 
-@Test("resolved model path honors JUSTASEC_MODEL_PATH env var")
+@Test("resolved model path honors ASKAMI_MODEL_PATH env var")
 func modelResolvedEnvVar() {
     globalStateLock.withLock {
-        setenv("JUSTASEC_MODEL_PATH", "/env/path/model.bin", 1)
-        defer { unsetenv("JUSTASEC_MODEL_PATH") }
+        setenv("ASKAMI_MODEL_PATH", "/env/path/model.bin", 1)
+        defer { unsetenv("ASKAMI_MODEL_PATH") }
         let cfg = WhisperServerConfig(modelPath: "models/ggml-base-q5_1.bin")
         #expect(cfg.resolvedModelPath == "/env/path/model.bin")
     }
@@ -851,9 +851,9 @@ func realServerIntegration3x() async throws {
 
         // Derive project root from test file path, immune to cwd changes
         let projectRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // Tests/justasecTests/
+            .deletingLastPathComponent() // Tests/askamiTests/
             .deletingLastPathComponent() // Tests/
-            .deletingLastPathComponent() // justasec/
+            .deletingLastPathComponent() // askami/
         let modelPath = projectRoot.appendingPathComponent("models/ggml-base-q5_1.bin").path
 
         let config = WhisperServerConfig(

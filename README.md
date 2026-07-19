@@ -1,4 +1,4 @@
-# justasec
+# askami
 
 Menu-bar-only macOS app: press Control-Option-Space to capture the last 30 seconds of
 microphone + system audio, transcribe locally, reason via OpenCode, and speak a
@@ -37,7 +37,7 @@ All paths are hardcoded; the app will refuse to start if any tool is missing.
 - Source: `hexgrad/Kokoro-82M` ported by Jud [[kokoro-coreml](https://github.com/Jud/kokoro-coreml)]
 - Voice: `af_heart` (American English female, fixed — no voice selector)
 - Format: 24 kHz mono PCM float
-- Cache location: `~/Library/Application Support/com.sebastianlungu.justasec/models/kokoro/`
+- Cache location: `~/Library/Application Support/com.sebastianlungu.askami/models/kokoro/`
 - License: Apache 2.0
 - Speech output uses AVAudioEngine and is not looped back through system audio (`excludesCurrentProcessAudio`)
 
@@ -59,11 +59,11 @@ Validates all four tools and downloads/verifies the model. Re-runnable.
 bash scripts/build.sh
 ```
 
-Produces `.build/justasec.app` — a locally signed menu-bar-only
-(`LSUIElement = true`) bundle with identifier `com.sebastianlungu.justasec`.
+Produces `.build/askami.app` — a locally signed menu-bar-only
+(`LSUIElement = true`) bundle with identifier `com.sebastianlungu.askami`.
 The verified Whisper model is copied into the signed bundle so the app can be
 launched from Finder or installed in `/Applications` without a working-directory dependency.
-Builds use the stable `JustASec Dev` identity from the login keychain so macOS
+Builds use the stable `Askami Dev` identity from the login keychain so macOS
 permissions remain valid when the app is rebuilt.
 
 ## Install
@@ -72,14 +72,14 @@ permissions remain valid when the app is rebuilt.
 bash scripts/install.sh
 ```
 
-This builds, stable-signs, and installs `/Applications/justasec.app`. The first
+This builds, stable-signs, and installs `/Applications/askami.app`. The first
 migration from an ad-hoc or different identity resets stale TCC records and
 requires one new approval. Later installs preserve the same signing requirement.
 
 ## Run
 
 ```bash
-open .build/justasec.app
+open .build/askami.app
 ```
 
 Or launch from Finder. The app lives in the menu bar with a persistent status icon.
@@ -87,7 +87,7 @@ It does not appear in the Dock or Cmd-Tab app switcher.
 
 ## Stop
 
-- **Cmd-Q** or **Quit JustASec** from the menu-bar menu.
+- **Cmd-Q** or **Quit Askami** from the menu-bar menu.
 - Ctrl-C or `kill <PID>` (SIGTERM). The app cleans up: terminates the
 whisper-server child, stops capture, stops audio, and exits.
 
@@ -99,7 +99,7 @@ First run triggers **two** system dialogs:
 2. **Screen & System Audio Recording** — required for system audio loopback.
 
 These are macOS TCC (Transparency, Consent, and Control) permissions keyed to
-the bundle identifier and stable `JustASec Dev` signing requirement. Rebuild
+the bundle identifier and stable `Askami Dev` signing requirement. Rebuild
 with `bash scripts/install.sh` or the project `/sign` skill to preserve them.
 
 If permission is denied, spoken error "Startup failed." is announced and the
@@ -188,7 +188,7 @@ Click the menu-bar icon → **Settings…** to open the compact settings panel,
 which contains:
 
 - **Global Shortcut** — click to record a new hotkey combination.
-- **Quit JustASec** — terminates the app gracefully.
+- **Quit Askami** — terminates the app gracefully.
 - **Error label** — shown when shortcut registration fails.
 
 The menu also shows a **Shortcut: <current shortcut>** row that reflects the
@@ -210,7 +210,7 @@ See [Sonic Logo](#sonic-logo) for details.
   prompts, or answers to disk.
 - No debug WAV files, replay files, transcript archives, or log files are
   created.
-- Stage timings (e.g. `justasec: snapshot 1.234s`) are printed to stderr but
+- Stage timings (e.g. `askami: snapshot 1.234s`) are printed to stderr but
   contain no content.
 - The local Whisper server binds only to `127.0.0.1` (loopback). It is not
   exposed to the LAN.
@@ -222,7 +222,7 @@ See [Sonic Logo](#sonic-logo) for details.
 
 1. **OpenCode session persistence.** OpenCode 1.18.3 persists local session
    history, including the transcript prompt and answer, in its own storage.
-   justasec does not attempt to delete OpenCode's shared data. This behavior
+   askami does not attempt to delete OpenCode's shared data. This behavior
    is accepted as a privacy exception and documented; it does not constitute a
    hidden leak.
 2. **Remote provider transmission.** The transcript leaves the machine through
@@ -261,7 +261,7 @@ Speech is generated locally using **Kokoro-82M** via
 [kokoro-coreml](https://github.com/Jud/kokoro-coreml) (v0.11.2, Apache 2.0).
 
 - **Voice**: `af_heart` (American English female, hardcoded — no selector).
-- **Model download**: automatic on first use, cached at `~/Library/Application Support/com.sebastianlungu.justasec/models/kokoro/` (~99 MB). Reusable offline after first download.
+- **Model download**: automatic on first use, cached at `~/Library/Application Support/com.sebastianlungu.askami/models/kokoro/` (~99 MB). Reusable offline after first download.
 - **Playback**: synthesized audio is streamed through `AVAudioEngine` / `AVAudioPlayerNode` at 24 kHz. Playback starts as soon as the first chunk is synthesized.
 - **Concurrency**: one utterance at a time; concurrent speak requests return `.failed`. A 30-second timeout per utterance guards against hangs; the timeout returns `.failed`.
 - **Error handling**: model download/inference failures print to stderr and return `.failed`. The orchestrator recovers by speaking a fallback message.
@@ -271,14 +271,14 @@ Speech is generated locally using **Kokoro-82M** via
 
 ### Model Substitution (NOT SUPPORTED)
 
-The `JUSTASEC_MODEL_PATH` environment variable exists and changes where the
+The `ASKAMI_MODEL_PATH` environment variable exists and changes where the
 app looks for the model file at runtime. However, `WhisperServerConfig.validateModel()`
 enforces the exact file size (59,707,625 bytes) and SHA-256 hash of
 `ggml-base-q5_1.bin` before launch. A larger model such as `large-v3-turbo`
 would fail validation at startup.
 
 To enable a larger model the validation logic in `WhisperServerConfig.validateModel()`
-(`Sources/justasec/WhisperTranscriptionTypes.swift:79`) would need to be
+(`Sources/askami/WhisperTranscriptionTypes.swift:79`) would need to be
 relaxed or made conditional. This is an accepted gap; the validation hash is
 hardcoded for v0 safety.
 
@@ -377,10 +377,10 @@ The acceptance target is spoken output within **~20 seconds** of the hotkey
 (after model warm-up) on M1 Pro / 32 GB. Stage timings are printed to stderr:
 
 ```
-justasec: snapshot 1.234s
-justasec: transcription 3.456s
-justasec: opencode 5.678s
-justasec: time-to-speech 10.368s
+askami: snapshot 1.234s
+askami: transcription 3.456s
+askami: opencode 5.678s
+askami: time-to-speech 10.368s
 ```
 
 The SNCF sonic logo adds ~5.04 s (full MP3 duration) to the time-to-speech
@@ -390,10 +390,10 @@ Whisper model (Base Q5), OpenCode provider availability, and system load.
 ## Project Structure
 
 ```
-justasec/
+askami/
 ├── Package.swift              # SwiftPM executable + test target; depends on kokoro-coreml v0.11.2
 ├── Package.resolved           # Dependency lockfile (reproducible builds)
-├── justasec.entitlements      # Sandbox entitlements (mic, network, loopback)
+├── askami.entitlements      # Sandbox entitlements (mic, network, loopback)
 ├── scripts/
 │   ├── setup.sh               # Validate deps + download model
 │   ├── build.sh               # Release build + app bundle + stable sign
@@ -406,7 +406,7 @@ justasec/
 ├── models/
 │   ├── .gitkeep
 │   └── ggml-base-q5_1.bin     # (git-ignored) Whisper model weights
-├── Sources/justasec/          # 30 source files, menu-bar-only with settings panel
-├── Tests/justasecTests/       # 13 test files, ~400+ tests
+├── Sources/askami/          # 30 source files, menu-bar-only with settings panel
+├── Tests/askamiTests/       # 13 test files, ~400+ tests
 └── docs/hoff/debt/            # Known debt artifacts
 ```

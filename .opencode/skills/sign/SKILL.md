@@ -1,11 +1,11 @@
 ---
 name: sign
-description: Build, stable-sign, install, and relaunch JustASec. Use when the user says /sign, rebuild app, sign the app, build and sign, reinstall JustASec, or after changing macOS app code.
+description: Build, stable-sign, install, and relaunch Askami. Use when the user says /sign, rebuild app, sign the app, build and sign, reinstall Askami, or after changing macOS app code.
 ---
 
-# Sign JustASec
+# Sign Askami
 
-Never ad-hoc sign an installed JustASec build. Use the stable `JustASec Dev` identity so macOS TCC permissions survive rebuilds.
+Never ad-hoc sign an installed Askami build. Use the stable `Askami Dev` identity so macOS TCC permissions survive rebuilds.
 
 ## Workflow
 
@@ -18,10 +18,10 @@ Never ad-hoc sign an installed JustASec build. Use the stable `JustASec Dev` ide
 2. Launch the installed build:
 
    ```bash
-   open /Applications/justasec.app
+    open /Applications/askami.app
    ```
 
-3. Verify `codesign -dv --verbose=4 /Applications/justasec.app` reports `Authority=JustASec Dev`, then confirm the menu-bar status reaches `listening`.
+3. Verify `codesign -dv --verbose=4 /Applications/askami.app` reports `Authority=Askami Dev`, then confirm the menu-bar status reaches `listening`.
 
 4. Report build, installation, signature, and runtime status. If the installer reports an identity migration, tell the user to approve Microphone and Screen & System Audio Recording once and relaunch the app.
 

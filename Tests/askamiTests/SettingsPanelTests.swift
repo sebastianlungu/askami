@@ -2,7 +2,7 @@ import Testing
 import Foundation
 import AppKit
 import Carbon
-@testable import justasec
+@testable import askami
 
 // MARK: - Test Doubles
 
@@ -141,8 +141,8 @@ func prefsSaveAndLoad() {
 func prefsMalformedKeyCodeType() {
     let uuid = UUID().uuidString
     let d = UserDefaults(suiteName: uuid)!
-    d.set("bad", forKey: "justasec_hotkey_key_code")
-    d.set(Int(123), forKey: "justasec_hotkey_modifiers")
+    d.set("bad", forKey: "askami_hotkey_key_code")
+    d.set(Int(123), forKey: "askami_hotkey_modifiers")
     #expect(RealShortcutPreferenceStore(suiteName: uuid).loadShortcut() == .malformed)
 }
 
@@ -150,8 +150,8 @@ func prefsMalformedKeyCodeType() {
 func prefsMalformedModifiersType() {
     let uuid = UUID().uuidString
     let d = UserDefaults(suiteName: uuid)!
-    d.set(Int(12), forKey: "justasec_hotkey_key_code")
-    d.set("bad", forKey: "justasec_hotkey_modifiers")
+    d.set(Int(12), forKey: "askami_hotkey_key_code")
+    d.set("bad", forKey: "askami_hotkey_modifiers")
     #expect(RealShortcutPreferenceStore(suiteName: uuid).loadShortcut() == .malformed)
 }
 
@@ -159,8 +159,8 @@ func prefsMalformedModifiersType() {
 func prefsMalformedNegativeKeyCode() {
     let uuid = UUID().uuidString
     let d = UserDefaults(suiteName: uuid)!
-    d.set(Int(-1), forKey: "justasec_hotkey_key_code")
-    d.set(Int(123), forKey: "justasec_hotkey_modifiers")
+    d.set(Int(-1), forKey: "askami_hotkey_key_code")
+    d.set(Int(123), forKey: "askami_hotkey_modifiers")
     #expect(RealShortcutPreferenceStore(suiteName: uuid).loadShortcut() == .malformed)
 }
 
@@ -168,8 +168,8 @@ func prefsMalformedNegativeKeyCode() {
 func prefsMalformedNegativeModifiers() {
     let uuid = UUID().uuidString
     let d = UserDefaults(suiteName: uuid)!
-    d.set(Int(12), forKey: "justasec_hotkey_key_code")
-    d.set(Int(-5), forKey: "justasec_hotkey_modifiers")
+    d.set(Int(12), forKey: "askami_hotkey_key_code")
+    d.set(Int(-5), forKey: "askami_hotkey_modifiers")
     #expect(RealShortcutPreferenceStore(suiteName: uuid).loadShortcut() == .malformed)
 }
 
@@ -177,8 +177,8 @@ func prefsMalformedNegativeModifiers() {
 func prefsMalformedOversizedKeyCode() {
     let uuid = UUID().uuidString
     let d = UserDefaults(suiteName: uuid)!
-    d.set(Int(200), forKey: "justasec_hotkey_key_code")
-    d.set(Int(123), forKey: "justasec_hotkey_modifiers")
+    d.set(Int(200), forKey: "askami_hotkey_key_code")
+    d.set(Int(123), forKey: "askami_hotkey_modifiers")
     #expect(RealShortcutPreferenceStore(suiteName: uuid).loadShortcut() == .malformed)
 }
 
@@ -186,8 +186,8 @@ func prefsMalformedOversizedKeyCode() {
 func prefsMalformedUnknownModifierBits() {
     let uuid = UUID().uuidString
     let d = UserDefaults(suiteName: uuid)!
-    d.set(Int(12), forKey: "justasec_hotkey_key_code")
-    d.set(Int(0xFF00), forKey: "justasec_hotkey_modifiers")
+    d.set(Int(12), forKey: "askami_hotkey_key_code")
+    d.set(Int(0xFF00), forKey: "askami_hotkey_modifiers")
     #expect(RealShortcutPreferenceStore(suiteName: uuid).loadShortcut() == .malformed)
 }
 
@@ -195,8 +195,8 @@ func prefsMalformedUnknownModifierBits() {
 func prefsMalformedMissingModifier() {
     let uuid = UUID().uuidString
     let d = UserDefaults(suiteName: uuid)!
-    d.set(Int(12), forKey: "justasec_hotkey_key_code")
-    d.set(Int(0), forKey: "justasec_hotkey_modifiers")
+    d.set(Int(12), forKey: "askami_hotkey_key_code")
+    d.set(Int(0), forKey: "askami_hotkey_modifiers")
     #expect(RealShortcutPreferenceStore(suiteName: uuid).loadShortcut() == .malformed)
 }
 
@@ -204,8 +204,8 @@ func prefsMalformedMissingModifier() {
 func prefsMalformedModifierOnly() {
     let uuid = UUID().uuidString
     let d = UserDefaults(suiteName: uuid)!
-    d.set(Int(kVK_Control), forKey: "justasec_hotkey_key_code")
-    d.set(Int(controlKey), forKey: "justasec_hotkey_modifiers")
+    d.set(Int(kVK_Control), forKey: "askami_hotkey_key_code")
+    d.set(Int(controlKey), forKey: "askami_hotkey_modifiers")
     #expect(RealShortcutPreferenceStore(suiteName: uuid).loadShortcut() == .malformed)
 }
 
@@ -553,15 +553,15 @@ func panelQuitButtonAction() {
 
 // MARK: - Menu Tests
 
-@Test("JustasecApp status item menu has Quit with Cmd-Q")
+@Test("AskamiApp status item menu has Quit with Cmd-Q")
 @MainActor
 func appMenuHasCmdQ() {
-    let app = JustasecApp()
+    let app = AskamiApp()
     app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: nil))
 
     let menu = app.statusItem.menu
     #expect(menu != nil)
-    let quitItem = menu?.item(withTitle: "Quit JustASec")
+    let quitItem = menu?.item(withTitle: "Quit Askami")
     #expect(quitItem != nil)
     #expect(quitItem?.keyEquivalent == "q")
     #expect(quitItem?.keyEquivalentModifierMask == .command)
@@ -571,7 +571,7 @@ func appMenuHasCmdQ() {
 @Test("Menu has disabled Shortcut row")
 @MainActor
 func menuHasShortcutRow() {
-    let app = JustasecApp()
+    let app = AskamiApp()
     app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: nil))
     guard let menu = app.statusItem.menu else { #expect(Bool(false)); return }
     let shortcutItems = menu.items.filter { $0.title.hasPrefix("Shortcut:") }
@@ -583,7 +583,7 @@ func menuHasShortcutRow() {
 @Test("Shortcut row shows default shortcut initially")
 @MainActor
 func shortcutRowShowsDefault() {
-    let app = JustasecApp()
+    let app = AskamiApp()
     app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: nil))
     let expected = "Shortcut: \u{2303}\u{2325}Space"
     let item = app.statusItem.menu?.item(withTitle: expected)
@@ -594,7 +594,7 @@ func shortcutRowShowsDefault() {
 @Test("Shortcut row is between Status and Settings in menu")
 @MainActor
 func shortcutRowPosition() {
-    let app = JustasecApp()
+    let app = AskamiApp()
     app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: nil))
     guard let menu = app.statusItem.menu else { #expect(Bool(false)); return }
     let statusIndex = menu.items.firstIndex { $0.title.hasPrefix("Status:") }
@@ -608,12 +608,12 @@ func shortcutRowPosition() {
     #expect(sci < sei)
 }
 
-// MARK: - JustasecApp Panel Wiring Tests
+// MARK: - AskamiApp Panel Wiring Tests
 
-@Test("JustasecApp settingsPanelController is accessible")
+@Test("AskamiApp settingsPanelController is accessible")
 @MainActor
 func appHasSettingsPanel() {
-    let app = JustasecApp()
+    let app = AskamiApp()
     // Force lazy init
     _ = app.settingsPanelController
 }

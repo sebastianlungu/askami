@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import justasec
+@testable import askami
 
 private var projectRoot: URL {
     URL(filePath: #filePath)
@@ -9,16 +9,16 @@ private var projectRoot: URL {
         .deletingLastPathComponent()
 }
 
-@Test("bundleIdentifier is com.sebastianlungu.justasec")
+@Test("bundleIdentifier is com.sebastianlungu.askami")
 @MainActor
 func bundleIdentifier() {
-    #expect(JustasecApp.bundleIdentifier == "com.sebastianlungu.justasec")
+    #expect(AskamiApp.bundleIdentifier == "com.sebastianlungu.askami")
 }
 
 @Test("activateDock is .accessory for menu-bar-only")
 @MainActor
 func activateDock() {
-    #expect(JustasecApp.preferredActivationPolicy == .accessory)
+    #expect(AskamiApp.preferredActivationPolicy == .accessory)
 }
 
 @Test("LSUIElement is true in Info.plist for menu-bar-only")
@@ -26,7 +26,7 @@ func activateDock() {
 func lsuiElementIsTrue() throws {
     let testFile = URL(filePath: #filePath)
     let plistPath = testFile
-        .deletingLastPathComponent() // Tests/justasecTests
+        .deletingLastPathComponent() // Tests/askamiTests
         .deletingLastPathComponent() // Tests/
         .deletingLastPathComponent() // project root
         .appending(component: "scripts")
@@ -67,10 +67,37 @@ func buildScriptCopiesReadyChime() throws {
     let scriptURL = projectRoot.appending(path: "scripts/build.sh")
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
     #expect(script.contains("ready-chime.mp3"))
-    #expect(script.contains("3244c21a0ff72ab70cc2438a22f5e5655f0b11586063e7dded14cae51a6c6ac8"))
+    #expect(script.contains("e0c00388d3a91f11721ac5ed3070db67c230e0ed0d98022f3a5a31588434d472"))
     #expect(!script.contains("sncf-sonic-logo.mp3"))
     #expect(!script.contains("success-chime.wav"))
     #expect(script.contains("shasum -a 256"))
+}
+
+@Test("successful speech completion has no artificial settle")
+func successfulSpeechHasNoSettle() throws {
+    let sourceURL = projectRoot.appending(path: "Sources/askami/PipelineOrchestrator.swift")
+    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    let function = try #require(source.components(separatedBy: "completeSuccessfulSpeech").last)
+    #expect(function.contains("endSuppression(after: 0)"))
+    #expect(!function.contains("endSuppression(after: 0.5)"))
+}
+
+@Test("ready chime plays at 0.8 volume")
+func readyChimeVolume() throws {
+    let sourceURL = projectRoot.appending(path: "Sources/askami/AudioFeedback.swift")
+    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    #expect(source.contains("player.volume = 0.8"))
+}
+
+@Test("speech announcement waits for prepared TTS audio")
+func speechAnnouncementUsesPlaybackBoundary() throws {
+    let sourceURL = projectRoot.appending(path: "Sources/askami/PipelineOrchestrator.swift")
+    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    #expect(source.contains("beforePlayback:"))
+
+    let speechURL = projectRoot.appending(path: "Sources/askami/SpeechSynthesizer.swift")
+    let speechSource = try String(contentsOf: speechURL, encoding: .utf8)
+    #expect(speechSource.contains("guard hasAudio else"))
 }
 
 @Test("build script no longer references old chime files")
@@ -92,11 +119,11 @@ func buildScriptCopiesSwiftPMBundles() throws {
     #expect(hasReleaseDir, "build.sh must define RELEASE_DIR as single source of truth")
 }
 
-@Test("build script uses the stable JustASec signing identity with hardened runtime")
+@Test("build script uses the stable Askami signing identity with hardened runtime")
 func buildScriptUsesStableSigning() throws {
     let scriptURL = projectRoot.appending(path: "scripts/build.sh")
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
-    #expect(script.contains("JustASec Dev"))
+    #expect(script.contains("Askami Dev"))
     #expect(script.contains("--sign \"$SIGN_IDENTITY\""))
     #expect(!script.contains("--sign -"))
     #expect(script.contains("--options runtime"))
@@ -130,7 +157,7 @@ func signSkillUsesInstallScript() throws {
 @Test("validateDependencies succeeds with expected tools")
 @MainActor
 func validateDependencies() {
-    let app = JustasecApp()
+    let app = AskamiApp()
     let result = app.validateSystemDependencies()
     #expect(result)
 }

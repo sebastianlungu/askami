@@ -3,13 +3,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PRODUCT="justasec"
-BUNDLE_ID="com.sebastianlungu.justasec"
+PRODUCT="askami"
+BUNDLE_ID="com.sebastianlungu.askami"
 BUILD_DIR=".build"
 ARCH="arm64-apple-macosx"
 RELEASE_DIR="$BUILD_DIR/$ARCH/release"
 MODEL="models/ggml-base-q5_1.bin"
-SIGN_IDENTITY="${SIGN_IDENTITY:-JustASec Dev}"
+SIGN_IDENTITY="${SIGN_IDENTITY:-Askami Dev}"
 LOGIN_KEYCHAIN="${LOGIN_KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
 
 ensure_signing_identity() {
@@ -19,7 +19,7 @@ ensure_signing_identity() {
 
     echo "--- Provisioning stable signing identity: $SIGN_IDENTITY ---"
     local signing_dir key cert archive password
-    signing_dir="$(mktemp -d "${TMPDIR:-/tmp}/justasec-signing.XXXXXX")"
+    signing_dir="$(mktemp -d "${TMPDIR:-/tmp}/askami-signing.XXXXXX")"
     key="$signing_dir/key.pem"
     cert="$signing_dir/cert.pem"
     archive="$signing_dir/identity.p12"
@@ -45,7 +45,7 @@ ensure_signing_identity() {
     fi
 }
 
-echo "=== justasec build ==="
+echo "=== askami build ==="
 
 ensure_signing_identity
 
@@ -88,7 +88,7 @@ cp scripts/Info.plist "$APP_BUNDLE/Contents/"
 cp scripts/AppIcon.icns "$APP_BUNDLE/Contents/Resources/"
 echo "--- Validating ready-chime ---"
 CHIME_SRC="scripts/ready-chime.mp3"
-CHIME_HASH_EXPECTED="3244c21a0ff72ab70cc2438a22f5e5655f0b11586063e7dded14cae51a6c6ac8"
+CHIME_HASH_EXPECTED="e0c00388d3a91f11721ac5ed3070db67c230e0ed0d98022f3a5a31588434d472"
 CHIME_HASH_ACTUAL="$(shasum -a 256 "$CHIME_SRC" | cut -d' ' -f1)"
 if [ "$CHIME_HASH_EXPECTED" != "$CHIME_HASH_ACTUAL" ]; then
     echo "  ERROR: ready-chime hash mismatch"
@@ -109,7 +109,7 @@ echo "--- Code signing ($SIGN_IDENTITY) ---"
 codesign --force --sign "$SIGN_IDENTITY" \
     --identifier "$BUNDLE_ID" \
     --options runtime \
-    --entitlements justasec.entitlements \
+    --entitlements askami.entitlements \
     "$APP_BUNDLE"
 
 echo "--- Verification ---"

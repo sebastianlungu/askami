@@ -32,8 +32,19 @@ public enum SpeechResult: Sendable, Equatable {
 
 public protocol SpeechSynthesizerProtocol: AnyObject, Sendable {
     @discardableResult
-    func speak(_ text: String, language: String?) async -> SpeechResult
+    func speak(
+        _ text: String,
+        language: String?,
+        beforePlayback: PlaySoundEffect?
+    ) async -> SpeechResult
     func stop()
+}
+
+public extension SpeechSynthesizerProtocol {
+    @discardableResult
+    func speak(_ text: String, language: String?) async -> SpeechResult {
+        await speak(text, language: language, beforePlayback: nil)
+    }
 }
 
 public protocol ClockProtocol: Sendable {
@@ -240,8 +251,14 @@ public final class SpeechSynthesizerFake: SpeechSynthesizerProtocol, @unchecked 
 
     public init() {}
 
-    public func speak(_ text: String, language: String?) async -> SpeechResult {
+    public func speak(
+        _ text: String,
+        language: String?,
+        beforePlayback: PlaySoundEffect?
+    ) async -> SpeechResult {
         if shouldFail { return .failed }
+        await beforePlayback?()
+        if Task.isCancelled { return .cancelled }
         if delay > 0 {
             do {
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))

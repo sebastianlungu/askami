@@ -55,7 +55,7 @@ public final class PipelineOrchestrator {
             let answer = try await runner.reason(transcription, timings: &timings)
 
             let elapsed = runner.clock.now() - startTime
-            runner.log("justasec: time-to-speech \(String(format: "%.3f", elapsed))s\n")
+            runner.log("askami: time-to-speech \(String(format: "%.3f", elapsed))s\n")
 
             await self.speakOnMainWithFeedback(answer: answer, timings: timings, totalElapsed: elapsed)
         } catch let error as WhisperTranscriptionError where error == .noSpeechDetected {
@@ -93,11 +93,16 @@ public final class PipelineOrchestrator {
             try stateMachine.beginSpeaking()
             deps.micGate.startSuppression()
             deps.eventRecorder?.record(.suppressionStart)
+        }
+    }
+
+    nonisolated private func announceReadySpeech() async {
+        await MainActor.run { [self] in
             presenter.transition(to: .success)
             deps.eventRecorder?.record(.status(.success))
         }
         await deps.playSoundEffect()
-        try Task.checkCancellation()
+        guard !Task.isCancelled else { return }
         deps.eventRecorder?.record(.sonicLogo)
         await MainActor.run { [self] in
             presenter.transition(to: .tts)
@@ -106,8 +111,15 @@ public final class PipelineOrchestrator {
     }
 
     nonisolated private func speakAnswer(_ answer: OpenCodeResult) async -> SpeechResult {
-        deps.eventRecorder?.record(.speechBegin)
-        let result = await deps.speech.speak(answer.answer, language: answer.language)
+        let result = await deps.speech.speak(
+            answer.answer,
+            language: answer.language,
+            beforePlayback: { [self] in
+                await announceReadySpeech()
+                guard !Task.isCancelled else { return }
+                deps.eventRecorder?.record(.speechBegin)
+            }
+        )
         deps.eventRecorder?.record(.speechResult(result))
         return result
     }
@@ -115,7 +127,7 @@ public final class PipelineOrchestrator {
     nonisolated private func handleAnswerSpeech(_ result: SpeechResult, answer: OpenCodeResult) async throws {
         switch result {
         case .completed:
-            try await settleAndComplete()
+            try await completeSuccessfulSpeech()
         case .cancelled:
             await releaseSuppression(0)
             await MainActor.run { [self] in
@@ -140,8 +152,9 @@ public final class PipelineOrchestrator {
         try await completeLifecycleAndListen()
     }
 
-    nonisolated private func settleAndComplete() async throws {
-        await deps.micGate.endSuppression(after: 0.5)
+    nonisolated private func completeSuccessfulSpeech() async throws {
+        // Speech completion already waits for AVAudioPlayerNode's dataPlayedBack drain.
+        await deps.micGate.endSuppression(after: 0)
         deps.eventRecorder?.record(.suppressionEnd)
         try await completeLifecycleAndListen()
     }
@@ -221,7 +234,7 @@ public final class PipelineOrchestrator {
         let (message, logMsg) = classifyError(error)
         await MainActor.run { [self] in
             lastTimings = TimingSnapshot(totalElapsed: totalElapsed)
-            deps.log("justasec: \(logMsg) \(error)\n")
+            deps.log("askami: \(logMsg) \(error)\n")
         }
         await speakOnMainWithRecovery(errorMessage: message, settle: 0.3)
     }

@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import AppKit
-@testable import justasec
+@testable import askami
 
 // MARK: - DockStatus Enum
 
@@ -363,9 +363,9 @@ func cleanupIdempotent() {
 
 // MARK: - Lifecycle Wiring
 
-@Test("JustasecApp dockStatusPresenter initializes as launching")
+@Test("AskamiApp dockStatusPresenter initializes as launching")
 @MainActor
 func appDockStartsLaunching() {
-    let app = JustasecApp()
+    let app = AskamiApp()
     #expect(app.dockStatusPresenter.currentStatus == .launching)
 }

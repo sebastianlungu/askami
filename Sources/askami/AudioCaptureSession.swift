@@ -10,7 +10,7 @@ private final class CaptureDiagnostics: Sendable {
 
     func logOnce(_ key: String, _ message: String) {
         let isNew = reported.withLock { $0.insert(key).inserted }
-        if isNew { fputs("justasec: capture diagnostic: \(message)\n", stderr) }
+        if isNew { fputs("askami: capture diagnostic: \(message)\n", stderr) }
     }
 }
 
@@ -232,11 +232,11 @@ public final class AudioCaptureSession: NSObject, AudioCaptureSessionProtocol {
     private var stream: SCStream?
     private var stopping = false
     private let screenQueue = DispatchQueue(
-        label: "com.sebastianlungu.justasec.capture.screen",
+        label: "com.sebastianlungu.askami.capture.screen",
         qos: .utility
     )
     private let systemAudioQueue = DispatchQueue(
-        label: "com.sebastianlungu.justasec.capture.system-audio",
+        label: "com.sebastianlungu.askami.capture.system-audio",
         qos: .userInitiated
     )
     public init(

@@ -11,10 +11,15 @@ public let espeakExecutablePath = "/opt/homebrew/bin/espeak-ng"
 public let kokoroUseCPUOnly = true
 
 // MARK: - Public driver protocol
-
 public protocol SpeechDriverProtocol: AnyObject, Sendable {
-    func speak(_ text: String, language: String?) async -> SpeechResult
+    func speak(_ text: String, language: String?, beforePlayback: PlaySoundEffect?) async -> SpeechResult
     func stop()
+}
+
+public extension SpeechDriverProtocol {
+    func speak(_ text: String, language: String?) async -> SpeechResult {
+        await speak(text, language: language, beforePlayback: nil)
+    }
 }
 
 public struct KokoroLanguageProfile: Sendable, Equatable {
@@ -79,92 +84,8 @@ public enum ESpeakPhonemizer {
 }
 
 // MARK: - Internal timeout hinting
-
 package protocol TimeoutHinting {
     var timeoutHint: TimeInterval { get }
-}
-
-// MARK: - Playback session (serializes all AVAudioEngine access)
-
-private actor PlaybackSession {
-    private let engine: AVAudioEngine
-    private let player: AVAudioPlayerNode
-    private let _cancelled = OSAllocatedUnfairLock(initialState: false)
-    private let _pendingCount = OSAllocatedUnfairLock(initialState: 0)
-    private let _drainContinuation = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
-    private static let maxBuffered = 4
-    private static let backpressureTimeout: Duration = .seconds(5)
-
-    init?() {
-        let engine = AVAudioEngine()
-        let player = AVAudioPlayerNode()
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: KokoroEngine.audioFormat)
-        do {
-            try engine.start()
-        } catch {
-            fputs("justasec: audio engine unavailable — \(error)\n", stderr)
-            return nil
-        }
-        player.play()
-        self.engine = engine
-        self.player = player
-    }
-
-    /// Schedule a buffer for playback. Returns false on cancellation or timeout.
-    /// The package's paceToRealtime paces the producer; this is a local safety cap.
-    func enqueue(_ buffer: AVAudioPCMBuffer) async -> Bool {
-        if _cancelled.withLock({ $0 }) { return false }
-        let deadline = ContinuousClock.now + Self.backpressureTimeout
-        while _pendingCount.withLock({ $0 }) >= Self.maxBuffered {
-            try? await Task.sleep(nanoseconds: 10_000_000)
-            if _cancelled.withLock({ $0 }) { return false }
-            if ContinuousClock.now >= deadline { return false }
-        }
-        _pendingCount.withLock { $0 += 1 }
-        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack, completionHandler: { [count = _pendingCount] (_: AVAudioPlayerNodeCompletionCallbackType) in
-            count.withLock { $0 -= 1 }
-        })
-        return true
-    }
-
-    /// Wait for all enqueued audio to finish playing. Uses a stored continuation
-    /// so cancel() can also resume it, preventing leaks.
-    func drain() async {
-        if _cancelled.withLock({ $0 }) { return }
-        if _drainContinuation.withLock({ $0 }) != nil { return }
-
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            _drainContinuation.withLock { $0 = cont }
-            let fmt = KokoroEngine.audioFormat
-            guard let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 1) else {
-                resumeDrain()
-                return
-            }
-            buf.frameLength = 1
-            buf.floatChannelData?[0][0] = 0
-            player.scheduleBuffer(buf, completionCallbackType: .dataPlayedBack, completionHandler: { [weak self] (_: AVAudioPlayerNodeCompletionCallbackType) in
-                self?.resumeDrain()
-            })
-        }
-    }
-
-    private nonisolated func resumeDrain() {
-        let cont = _drainContinuation.withLock { c -> CheckedContinuation<Void, Never>? in
-            let saved = c
-            c = nil
-            return saved
-        }
-        cont?.resume()
-    }
-
-    func cancel() {
-        _cancelled.withLock { $0 = true }
-        engine.stop()
-        resumeDrain()
-    }
-
-    var isCancelled: Bool { _cancelled.withLock { $0 } }
 }
 
 // MARK: - Kokoro production driver
@@ -196,12 +117,14 @@ private actor PlaybackSession {
         return 300
     }
 
-    public func speak(_ text: String, language: String? = nil) async -> SpeechResult {
+    public func speak(_ text: String, language: String? = nil,
+                      beforePlayback: PlaySoundEffect? = nil) async -> SpeechResult {
         _stopRequested.withLock { $0 = false }
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 speakTask = Task.detached { [self] in
-                    let result = await self.performSpeaking(text, language: language)
+                    let result = await self.performSpeaking(
+                        text, language: language, beforePlayback: beforePlayback)
                     continuation.resume(returning: result)
                 }
             }
@@ -210,50 +133,58 @@ private actor PlaybackSession {
         }
     }
 
-    private func performSpeaking(_ text: String, language: String?) async -> SpeechResult {
+    private func performSpeaking(_ text: String, language: String?, beforePlayback: PlaySoundEffect?) async -> SpeechResult {
         let engine: KokoroEngine
         do {
             engine = try loadOrDownloadEngine()
         } catch is CancellationError {
             return .cancelled
         } catch {
-            fputs("justasec: Kokoro model not available — \(error)\n", stderr)
+            fputs("askami: Kokoro model not available — \(error)\n", stderr)
             return .failed
         }
         guard let session = PlaybackSession() else { return .failed }
         self.session = session
-
         let stream: AsyncStream<SpeakEvent>
         do {
             stream = try await makeStream(engine: engine, text: text, language: language)
         } catch {
-            fputs("justasec: Kokoro speak failed — \(error)\n", stderr)
+            fputs("askami: Kokoro speak failed — \(error)\n", stderr)
             await session.cancel()
             return .failed
         }
-
         var hasAudio = false
         for await event in stream where !_stopRequested.withLock({ $0 }) {
             switch event {
             case .audio(let buffer):
+                if !hasAudio {
+                    await beforePlayback?()
+                    guard !_stopRequested.withLock({ $0 }), !Task.isCancelled else {
+                        await session.cancel()
+                        return .cancelled
+                    }
+                }
                 guard await session.enqueue(buffer) else {
                     await session.cancel()
                     return .failed
                 }
                 hasAudio = true
             case .chunkFailed(let error):
-                fputs("justasec: synthesis chunk failed — \(error)\n", stderr)
+                fputs("askami: synthesis chunk failed — \(error)\n", stderr)
                 await session.cancel()
                 return .failed
             }
         }
-
-        if hasAudio && !_stopRequested.withLock({ $0 }) {
+        guard hasAudio else {
+            await session.cancel()
+            self.session = nil
+            return _stopRequested.withLock({ $0 }) ? .cancelled : .failed
+        }
+        if !_stopRequested.withLock({ $0 }) {
             await session.drain()
         }
         await session.cancel()
         self.session = nil
-
         return _stopRequested.withLock({ $0 }) ? .cancelled : .completed
     }
 
@@ -329,13 +260,13 @@ private actor PlaybackSession {
         if Task.isCancelled { throw CancellationError() }
         let downloaded = KokoroEngine.isDownloaded(at: modelDirectory)
         if !downloaded {
-            fputs("justasec: downloading KokoroCoreML model (~99MB)...\n", stderr)
+            fputs("askami: downloading KokoroCoreML model (~99MB)...\n", stderr)
             do {
                 try KokoroEngine.download(to: modelDirectory) { pct in
-                    if pct == 1.0 { fputs("justasec: Kokoro download complete\n", stderr) }
+                    if pct == 1.0 { fputs("askami: Kokoro download complete\n", stderr) }
                 }
             } catch {
-                fputs("justasec: Kokoro download failed — \(error)\n", stderr)
+                fputs("askami: Kokoro download failed — \(error)\n", stderr)
                 throw error
             }
             if Task.isCancelled { throw CancellationError() }
@@ -371,10 +302,13 @@ public final class TestSpeechDriver: SpeechDriverProtocol, @unchecked Sendable {
 
     public init() {}
 
-    public func speak(_ text: String, language: String? = nil) async -> SpeechResult {
+    public func speak(_ text: String, language: String? = nil,
+                      beforePlayback: PlaySoundEffect? = nil) async -> SpeechResult {
         if shouldStreamFail { return .failed }
         capturedText = text
         capturedLanguage = language
+        await beforePlayback?()
+        if Task.isCancelled { return .cancelled }
         if autoCompleteDelay >= 0 {
             if autoCompleteDelay > 0 {
                 try? await Task.sleep(nanoseconds: UInt64(autoCompleteDelay * 1_000_000_000))
@@ -424,7 +358,8 @@ public final class SpeechSynthesizerActor: @preconcurrency SpeechSynthesizerProt
     }
 
     @discardableResult
-    public func speak(_ text: String, language: String?) async -> SpeechResult {
+    public func speak(_ text: String, language: String?,
+                      beforePlayback: PlaySoundEffect?) async -> SpeechResult {
         guard case .idle = state else { return .failed }
 
         let speakId = UUID()
@@ -437,7 +372,8 @@ public final class SpeechSynthesizerActor: @preconcurrency SpeechSynthesizerProt
                 Task { @MainActor [weak self, driver, text] in
                     guard let self, case .speaking(let currentId, _) = self.state,
                           currentId == speakId else { return }
-                    let result = await driver.speak(text, language: language)
+                    let result = await driver.speak(
+                        text, language: language, beforePlayback: beforePlayback)
                     guard case .speaking(let currentId2, _) = self.state,
                           currentId2 == speakId else { return }
                     self.state = .idle

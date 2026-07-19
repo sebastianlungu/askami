@@ -1,5 +1,5 @@
 import Testing
-@testable import justasec
+@testable import askami
 
 @Test("starts in startup state")
 func initialState() {

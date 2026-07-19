@@ -1,6 +1,6 @@
 import Testing
 import CoreMedia
-@testable import justasec
+@testable import askami
 
 @Test("idle gate does not discard any source")
 func idleNoDiscard() {

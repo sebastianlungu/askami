@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import os.lock
-@testable import justasec
+@testable import askami
 
 // MARK: - Fake tests (unchanged)
 
@@ -190,8 +190,16 @@ private final class HintTrackingDriver: SpeechDriverProtocol, TimeoutHinting, @u
         return wrapped.timeoutHintOverride
     }
 
-    func speak(_ text: String, language: String?) async -> SpeechResult {
-        await wrapped.speak(text, language: language)
+    func speak(
+        _ text: String,
+        language: String?,
+        beforePlayback: PlaySoundEffect?
+    ) async -> SpeechResult {
+        await wrapped.speak(
+            text,
+            language: language,
+            beforePlayback: beforePlayback
+        )
     }
     func stop() { wrapped.stop() }
 }

@@ -2,7 +2,7 @@ import Testing
 import CoreMedia
 import CoreAudio
 import Foundation
-@testable import justasec
+@testable import askami
 
 // MARK: - AudioStreamFormat Tests
 

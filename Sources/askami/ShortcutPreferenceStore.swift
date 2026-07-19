@@ -14,8 +14,8 @@ public protocol ShortcutPreferenceStoreProtocol: AnyObject {
 
 public final class RealShortcutPreferenceStore: ShortcutPreferenceStoreProtocol {
     private let defaults: UserDefaults
-    private let keyCodeKey = "justasec_hotkey_key_code"
-    private let modifiersKey = "justasec_hotkey_modifiers"
+    private let keyCodeKey = "askami_hotkey_key_code"
+    private let modifiersKey = "askami_hotkey_modifiers"
 
     public init(suiteName: String? = nil) {
         if let suiteName {

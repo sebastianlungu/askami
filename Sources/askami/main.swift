@@ -1,9 +1,9 @@
 import AppKit
 import Darwin
 
-let appDelegate = JustasecApp()
+let appDelegate = AskamiApp()
 guard appDelegate.validateSystemDependencies() else {
-    fputs("justasec: dependency validation failed\n", stderr)
+    fputs("askami: dependency validation failed\n", stderr)
     exit(1)
 }
 

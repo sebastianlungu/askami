@@ -41,7 +41,7 @@ public struct PipelineRunner: Sendable {
             throw PipelineError.silence
         }
         timings.snapshotElapsed = clock.now() - start
-        log("justasec: snapshot \(fmt(timings.snapshotElapsed))s\n")
+        log("askami: snapshot \(fmt(timings.snapshotElapsed))s\n")
         return wav
     }
 
@@ -49,7 +49,7 @@ public struct PipelineRunner: Sendable {
         let start = clock.now()
         let r = try await transcriber.transcribe(wavData: wav, timeout: 30.0)
         timings.transcriptionElapsed = clock.now() - start
-        log("justasec: transcription \(fmt(timings.transcriptionElapsed))s\n")
+        log("askami: transcription \(fmt(timings.transcriptionElapsed))s\n")
         return r
     }
 
@@ -57,7 +57,7 @@ public struct PipelineRunner: Sendable {
         let start = clock.now()
         let r = try await reasoner.analyze(transcript: t.text, language: t.language)
         timings.reasoningElapsed = clock.now() - start
-        log("justasec: opencode \(fmt(timings.reasoningElapsed))s\n")
+        log("askami: opencode \(fmt(timings.reasoningElapsed))s\n")
         return r
     }
 

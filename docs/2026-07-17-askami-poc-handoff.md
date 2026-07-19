@@ -1,4 +1,4 @@
-# justasec POC: Contextless Implementation Handoff
+# askami POC: Contextless Implementation Handoff
 
 ## Role
 
@@ -29,11 +29,11 @@ Run these steps before dispatching implementation work:
 
 ## Specification
 
-Source: approved justasec discovery and implementation plan from July 17, 2026. This section is the complete source of truth and must be implemented without relying on prior conversation.
+Source: approved askami discovery and implementation plan from July 17, 2026. This section is the complete source of truth and must be implemented without relying on prior conversation.
 
 ### Product Summary
 
-Build `justasec`, a personal macOS proof of concept that continuously listens to the user's microphone and all capturable system audio while retaining only the latest 30 seconds in memory. At any point, the user presses a global hotkey. The tool snapshots the preceding 30 seconds, transcribes the exchange locally, sends the transcript and a constrained interpretation prompt to a fast model through the installed OpenCode CLI, and speaks a concise answer aloud. It has no application UI.
+Build `askami`, a personal macOS proof of concept that continuously listens to the user's microphone and all capturable system audio while retaining only the latest 30 seconds in memory. At any point, the user presses a global hotkey. The tool snapshots the preceding 30 seconds, transcribes the exchange locally, sends the transcript and a constrained interpretation prompt to a fast model through the installed OpenCode CLI, and speaks a concise answer aloud. It has no application UI.
 
 The product is intentionally playful and latency-oriented. Perfect transcription precision is less important than receiving a useful answer quickly. The answer should address the latest explicit question in the captured exchange. If there is no explicit question, it should identify the central disagreement or debate and provide a useful concise verdict or insight.
 
@@ -49,7 +49,7 @@ The product is intentionally playful and latency-oriented. Perfect transcription
 
 ### Core User Journey
 
-1. The user manually starts `justasec` from the repository using a documented command.
+1. The user manually starts `askami` from the repository using a documented command.
 2. On first run, macOS may display unavoidable Microphone and Screen & System Audio Recording permission dialogs.
 3. The process validates its dependencies, starts a loopback-only local Whisper server, warms the speech model, starts microphone and system-audio capture, and remains running without a Dock icon, menu-bar item, window, or popover.
 4. Capture continuously updates a fixed 30-second in-memory lookback buffer. It does not continuously transcribe.
@@ -137,7 +137,7 @@ The product is intentionally playful and latency-oriented. Perfect transcription
 
 ### Privacy And Security Requirements
 
-- Audio must remain in memory and must never be written to disk by `justasec`.
+- Audio must remain in memory and must never be written to disk by `askami`.
 - Do not create debug WAV files, replay files, audio archives, transcript files, prompt files, or answer logs.
 - Do not persist application transcripts or answers outside OpenCode's accepted session behavior.
 - Do not log sensitive content.
@@ -152,7 +152,7 @@ The product is intentionally playful and latency-oriented. Perfect transcription
 
 - Create the project at `tools/justasec/` inside `/Users/sebastianlungu/agentikseb`.
 - Use a minimal Swift Package Manager executable and package it as a locally signed, headless `.app` bundle so macOS permissions have a stable identity.
-- Use bundle identifier `com.sebastianlungu.justasec` unless an existing repository convention requires a more specific identifier.
+- Use bundle identifier `com.sebastianlungu.askami` unless an existing repository convention requires a more specific identifier.
 - Set `LSUIElement` and avoid creating any application window, Dock icon, or menu-bar item.
 - Include setup and build scripts that validate dependencies, retrieve and verify the model, build a release binary, assemble the app bundle, and apply local signing.
 - Provide one documented manual start command and a clear stop method.
@@ -224,7 +224,7 @@ The product is intentionally playful and latency-oriented. Perfect transcription
 6. Terminal stderr is available because startup is manual. Diagnostics contain stage names, timings, and error categories only.
 7. The app may use a short post-TTS microphone suppression interval. Losing the user's microphone audio during the spoken answer is acceptable in v0.
 8. The user accepts best-effort behavior with external speakers and will use headphones when duplicate acoustic speech materially hurts quality.
-9. OpenCode session persistence and remote provider transmission are accepted; `justasec` must not attempt risky deletion of OpenCode's shared storage.
+9. OpenCode session persistence and remote provider transmission are accepted; `askami` must not attempt risky deletion of OpenCode's shared storage.
 10. The free DeepSeek model alias may become unavailable. v0 fails clearly rather than silently switching providers or models.
 11. One active inference at a time is sufficient. Requests are never queued.
 12. SwiftPM's built-in test support is the test framework; no UI automation framework is needed because the product has no UI.

@@ -3,9 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PRODUCT="justasec"
-BUNDLE_ID="com.sebastianlungu.justasec"
-SIGN_IDENTITY="${SIGN_IDENTITY:-JustASec Dev}"
+PRODUCT="askami"
+BUNDLE_ID="com.sebastianlungu.askami"
+SIGN_IDENTITY="${SIGN_IDENTITY:-Askami Dev}"
 BUILD_APP="$PWD/.build/$PRODUCT.app"
 APP="/Applications/$PRODUCT.app"
 

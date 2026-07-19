@@ -5,13 +5,13 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>justasec</string>
+    <string>askami</string>
     <key>CFBundleIdentifier</key>
-    <string>com.sebastianlungu.justasec</string>
+    <string>com.sebastianlungu.askami</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>justasec</string>
+    <string>askami</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -23,8 +23,8 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>justasec listens to the microphone to capture the latest 30 seconds of conversation for local transcription when triggered by a hotkey.</string>
+    <string>askami listens to the microphone to capture the latest 30 seconds of conversation for local transcription when triggered by a hotkey.</string>
     <key>NSSystemAudioUsageDescription</key>
-    <string>justasec captures system audio to include computer playback in the latest 30 seconds of conversation for local transcription when triggered by a hotkey.</string>
+    <string>askami captures system audio to include computer playback in the latest 30 seconds of conversation for local transcription when triggered by a hotkey.</string>
 </dict>
 </plist>

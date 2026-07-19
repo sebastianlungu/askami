@@ -24,7 +24,7 @@ public final class HotkeyController {
             self.currentShortcut = s
         case .malformed:
             self.currentShortcut = .default
-            fputs("justasec: hotkey preference data invalid, using default\n", stderr)
+            fputs("askami: hotkey preference data invalid, using default\n", stderr)
         }
     }
 
@@ -51,7 +51,7 @@ public final class HotkeyController {
             if let token = registrar.register(keyCode: ShortcutValue.default.keyCode, modifiers: ShortcutValue.default.modifiers, handler: handler) {
                 activeToken = token
                 preferenceStore.saveShortcut(.default)
-                fputs("justasec: hotkey fallback to Control-Option-Space\n", stderr)
+                fputs("askami: hotkey fallback to Control-Option-Space\n", stderr)
                 return true
             }
         }

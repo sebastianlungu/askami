@@ -1,5 +1,5 @@
 import Testing
-@testable import justasec
+@testable import askami
 
 @Test("register does not crash in test environment")
 func registerNoCrash() {

@@ -31,7 +31,7 @@ public struct WhisperServerConfig: Sendable, Equatable {
 
     public var resolvedModelPath: String {
         if modelPath.hasPrefix("/") { return modelPath }
-        if let env = ProcessInfo.processInfo.environment["JUSTASEC_MODEL_PATH"] {
+        if let env = ProcessInfo.processInfo.environment["ASKAMI_MODEL_PATH"] {
             if env.hasPrefix("/") { return env }
             let envPath = "\(FileManager.default.currentDirectoryPath)/\(env)"
             if FileManager.default.fileExists(atPath: envPath) { return envPath }

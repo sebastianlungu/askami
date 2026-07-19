@@ -1,6 +1,6 @@
 import Testing
 import Carbon
-@testable import justasec
+@testable import askami
 
 @Test("default shortcut is Control-Option-Space")
 func defaultShortcut() {

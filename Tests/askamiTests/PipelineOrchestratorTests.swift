@@ -2,7 +2,7 @@ import Testing
 import CoreMedia
 import Foundation
 import os.lock
-@testable import justasec
+@testable import askami
 
 private func makeTestWAV() -> Data {
     let samples: [Float32] = [0.1, 0.2, 0.3, 0.4]
@@ -431,7 +431,7 @@ func timingLogsContentFree() async throws {
     await runPipeline(orchestrator)
 
     for log in logCollector.logs {
-        let hasPrefix = log.hasPrefix("justasec: ")
+        let hasPrefix = log.hasPrefix("askami: ")
         #expect(hasPrefix)
         #expect(!log.lowercased().contains("Bonjour"))
         #expect(!log.lowercased().contains("hello"))
@@ -611,7 +611,7 @@ func layeredArtifactNoTraceAfterSuccess() async throws {
 
     // Layer 2: real SnapshotEngine with real audio conversion/WAV encoding
     // (exercises AudioConverter, AudioMixer, WAVEncoder — all in-memory)
-    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("justasec_layered_ok_\(UUID().uuidString)")
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("askami_layered_ok_\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: tmp) }
 
@@ -665,7 +665,7 @@ func layeredArtifactNoTraceAfterSuccess() async throws {
 func layeredArtifactNoTraceAfterFailure() async throws {
     let rootScanBefore = scanForArtifacts(at: projectRoot)
 
-    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("justasec_layered_fail_\(UUID().uuidString)")
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("askami_layered_fail_\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: tmp) }
 
@@ -703,9 +703,9 @@ func layeredArtifactNoTraceAfterFailure() async throws {
 @Test("source-boundary: production source files never call file-write APIs",
       .enabled(if: FileManager.default.fileExists(atPath: "/usr/bin/grep")))
 func sourceBoundaryNoFileWriteAPIs() throws {
-    let srcDir = projectRoot.appendingPathComponent("Sources/justasec").path
+    let srcDir = projectRoot.appendingPathComponent("Sources/askami").path
     // Whitelist: file paths and symbols that intentionally produce Data (not write to disk)
-    let allowedPaths = ["AudioPipeline.swift", "JustasecApp.swift", "WhisperServerProcess.swift", "OpenCodeClient.swift"]
+    let allowedPaths = ["AudioPipeline.swift", "AskamiApp.swift", "WhisperServerProcess.swift", "OpenCodeClient.swift"]
     let allowedSymbols = ["readDataToEndOfFile", "readToEnd", "readabilityHandler", "availableData",
                            "writeStdin", "writeSamples", "writeHeader"]
     let forbiddenPatterns = [
@@ -911,6 +911,7 @@ private func makeSuccessDeps(
     clock: ClockProtocol = ClockFake(),
     speech: SpeechSynthesizerProtocol = SpeechSynthesizerFake(),
     eventRecorder: EventRecorder? = nil,
+    micGate: MicSuppressionGate = MicSuppressionGate(),
     playSoundEffect: @escaping PlaySoundEffect = {}
 ) -> (snapshot: SnapshotEngineFake, transcriber: WhisperTranscriberFake, reasoner: OpenCodeClientFake, clock: ClockProtocol, deps: PipelineDependencies) {
     let snapshotFake = SnapshotEngineFake()
@@ -933,11 +934,87 @@ private func makeSuccessDeps(
         speech: speech,
         feedback: .init(
             clock: clock,
+            micGate: micGate,
             playSoundEffect: playSoundEffect
         ),
         eventRecorder: eventRecorder
     )
     return (snapshotFake, transcriberFake, reasonerFake, clock, deps)
+}
+
+private final class PreparationControlledSpeechFake: SpeechSynthesizerProtocol, @unchecked Sendable {
+    private struct State {
+        var started = false
+        var continuation: CheckedContinuation<Void, Never>?
+        var startWaiter: CheckedContinuation<Void, Never>?
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    var isPreparing: Bool { state.withLock { $0.started } }
+
+    func waitUntilPreparing() async {
+        if isPreparing { return }
+        await withCheckedContinuation { continuation in
+            let started = state.withLock { state -> Bool in
+                if state.started { return true }
+                state.startWaiter = continuation
+                return false
+            }
+            if started { continuation.resume() }
+        }
+    }
+
+    func speak(
+        _ text: String,
+        language: String?,
+        beforePlayback: PlaySoundEffect?
+    ) async -> SpeechResult {
+        await withCheckedContinuation { continuation in
+            let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
+                state.started = true
+                state.continuation = continuation
+                defer { state.startWaiter = nil }
+                return state.startWaiter
+            }
+            waiter?.resume()
+        }
+        await beforePlayback?()
+        return .completed
+    }
+
+    func finishPreparation() {
+        let continuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
+            defer { state.continuation = nil }
+            return state.continuation
+        }
+        continuation?.resume()
+    }
+
+    func stop() { finishPreparation() }
+}
+
+@Test("checkmark appears only when prepared speech starts its chime")
+@MainActor
+func checkmarkWaitsForPreparedSpeech() async throws {
+    let recorder = EventRecorder()
+    let speechFake = PreparationControlledSpeechFake()
+    let (_, _, _, _, deps) = makeSuccessDeps(speech: speechFake, eventRecorder: recorder)
+    let orchestrator = PipelineOrchestrator(dependencies: deps)
+    try orchestrator.stateMachine.startupComplete()
+
+    orchestrator.handleTrigger()
+    await speechFake.waitUntilPreparing()
+
+    #expect(speechFake.isPreparing)
+    #expect(orchestrator.presenter.currentStatus == .agent)
+    #expect(!recorder.events.contains(.status(.success)))
+
+    speechFake.finishPreparation()
+    if let task = orchestrator.currentPipelineTask { await task.value }
+
+    #expect(recorder.events.contains(.status(.success)))
+    #expect(orchestrator.stateMachine.state == .ready)
 }
 
 @Test("exact success event order with event recorder")
@@ -1403,15 +1480,15 @@ func cancellationBeforeSoundEffectNoSonicLogo() async throws {
 
 // MARK: - Settle Evidence
 
-@Test("mic gate suppressing after speech, idle after settle")
+@Test("mic gate releases after successful speech")
 @MainActor
-func settleSuppressionEvidence() async throws {
+func suppressionReleasesAfterSuccessfulSpeech() async throws {
     let recorder = EventRecorder()
     let clockFake = ClockFake()
     let speechFake = SpeechSynthesizerFake()
     let micGate = MicSuppressionGate()
     let (_, _, _, _, deps) = makeSuccessDeps(
-        clock: clockFake, speech: speechFake, eventRecorder: recorder
+        clock: clockFake, speech: speechFake, eventRecorder: recorder, micGate: micGate
     )
     let orchestrator = PipelineOrchestrator(dependencies: deps)
     try orchestrator.stateMachine.startupComplete()
@@ -1595,13 +1672,22 @@ func speechFailureRecovery() async throws {
     let clockFake = ClockFake()
     let speechFake = SpeechSynthesizerFake()
     speechFake.shouldFail = true
-    let (_, _, _, _, deps) = makeSuccessDeps(clock: clockFake, speech: speechFake, eventRecorder: recorder)
+    let sfxRecorder = SoundEffectRecorder()
+    let (_, _, _, _, deps) = makeSuccessDeps(
+        clock: clockFake,
+        speech: speechFake,
+        eventRecorder: recorder,
+        playSoundEffect: { sfxRecorder.record() }
+    )
     let orchestrator = PipelineOrchestrator(dependencies: deps)
     try orchestrator.stateMachine.startupComplete()
     await runPipeline(orchestrator)
 
     let events = recorder.events
     #expect(events.contains(.speechResult(.failed)))
+    #expect(sfxRecorder.callCount == 0)
+    #expect(!events.contains(.sonicLogo))
+    #expect(!events.contains(.status(.tts)))
     #expect(events.contains(.status(.error)))
     #expect(events.contains(.status(.listening)))
     let sleepEvents = clockFake.sleeps
@@ -1741,8 +1827,13 @@ private final class ControlledSpeechFake: SpeechSynthesizerProtocol, @unchecked 
 
     init(clock: ClockFake) { self.clock = clock }
 
-    func speak(_ text: String, language: String?) async -> SpeechResult {
+    func speak(
+        _ text: String,
+        language: String?,
+        beforePlayback: PlaySoundEffect?
+    ) async -> SpeechResult {
         if shouldFail { return .failed }
+        await beforePlayback?()
         if delay > 0 { clock.advance(by: delay) }
         spokenTexts.append((text, language))
         return .completed

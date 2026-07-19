@@ -1,7 +1,7 @@
 import Testing
 import CoreMedia
 import Foundation
-@testable import justasec
+@testable import askami
 
 // MARK: - Test Helpers
 

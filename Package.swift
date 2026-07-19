@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "justasec",
+            name: "askami",
     platforms: [
         .macOS(.v15)
     ],
@@ -11,14 +11,14 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "justasec",
+    name: "askami",
             dependencies: [
                 .product(name: "KokoroCoreML", package: "kokoro-coreml")
             ]
         ),
         .testTarget(
-            name: "justasecTests",
-            dependencies: ["justasec"]
+            name: "askamiTests",
+            dependencies: ["askami"]
         )
     ]
 )

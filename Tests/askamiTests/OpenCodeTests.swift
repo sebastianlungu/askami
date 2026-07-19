@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import justasec
+@testable import askami
 
 // MARK: - Config
 
@@ -812,7 +812,7 @@ func openCodeEnvPermissionNoTranscript() {
 func openCodeAllowlistEnv() throws {
     let env = OpenCodeClient.buildChildEnv()
     // Allowlist excludes arbitrary sentinel keys
-    #expect(env["JUSTASEC_SENTINEL_MOCK"] == nil, "unrelated sentinel must be excluded")
+    #expect(env["ASKAMI_SENTINEL_MOCK"] == nil, "unrelated sentinel must be excluded")
     // Blocked prefixes excluded
     #expect(env["DYLD_INSERT_LIBRARIES"] == nil, "DYLD_ vars must be excluded")
     #expect(env["LD_PRELOAD"] == nil, "LD_ vars must be excluded")
@@ -1189,7 +1189,7 @@ func sigIgnInheritedByProcessChild() throws {
 @Test("unrelated sentinel secret is NOT forwarded (allowlist env)")
 func openCodeEnvSentinelExcluded() throws {
     try #require(FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode"))
-    let sentinelKey = "JUSTASEC_SENTINEL_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+    let sentinelKey = "ASKAMI_SENTINEL_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
     let sentinelValue = "super-secret-do-not-leak"
 
     // Build child env via the production allowlist

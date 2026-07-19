@@ -1,4 +1,4 @@
-# justasec Dock Status: Contextless Implementation Handoff
+# askami Dock Status: Contextless Implementation Handoff
 
 ## Role
 
@@ -16,23 +16,23 @@ process-lifecycle, and concurrency behavior.
 
 ## Project Bootstrap
 
-Work from `/Users/sebastianlungu/justasec` on `main`.
+Work from `/Users/sebastianlungu/askami` on `main`.
 
 Run these steps before dispatching implementation:
 
 1. `cat README.md`
 2. `cat AGENTS.md 2>/dev/null || echo "no AGENTS.md"`
 3. `cat Package.swift`
-4. `cat docs/2026-07-17-justasec-poc-handoff.md`
+4. `cat docs/2026-07-17-askami-poc-handoff.md`
 5. `cat docs/hoff/2026-07-18-dock-status-handoff.md`
-6. `ls -la` and inspect `Sources/justasec/`, `Tests/justasecTests/`, and `scripts/`.
+6. `ls -la` and inspect `Sources/askami/`, `Tests/askamiTests/`, and `scripts/`.
 7. `git status --short --branch` and `git log --oneline -10`.
 8. Preserve unrelated work and this handoff file. Never revert changes you did not create.
 9. `git checkout main`; do not create another branch.
 10. Run `swift test` and record the baseline test count.
 11. Run `swift build -c release -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors`.
 12. Run `bash scripts/build.sh` and inspect the signed bundle metadata.
-13. Confirm the existing bundle identifier remains `com.sebastianlungu.justasec`.
+13. Confirm the existing bundle identifier remains `com.sebastianlungu.askami`.
 14. Identify current AppKit, Swift Testing, TDD, formatting, and commit conventions.
 15. Load `test-driven-development`, `swift-concurrency`, `design-principles`, and
     `verification-before-completion` before implementation planning.
@@ -64,7 +64,7 @@ other application UI.
 - Remove the agent-only launch behavior that currently hides it from the Dock.
 - Use the native regular application activation policy.
 - Do not add a menu-bar status item.
-- Preserve bundle identifier `com.sebastianlungu.justasec` and all existing TCC
+- Preserve bundle identifier `com.sebastianlungu.askami` and all existing TCC
   usage descriptions and entitlements.
 - Add one proper base application icon to the signed app bundle and register it
   in Info.plist so the initial Dock/Finder icon is never generic.

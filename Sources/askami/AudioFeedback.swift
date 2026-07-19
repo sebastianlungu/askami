@@ -14,22 +14,22 @@ public final class AudioFeedback: NSObject {
         stop()
 
         guard let url = Bundle.main.url(forResource: "ready-chime", withExtension: "mp3") else {
-            fputs("justasec: ready-chime 'ready-chime.mp3' not found in bundle\n", stderr)
+            fputs("askami: ready-chime 'ready-chime.mp3' not found in bundle\n", stderr)
             return
         }
         let player: AVAudioPlayer
         do {
             player = try AVAudioPlayer(contentsOf: url)
         } catch {
-            fputs("justasec: ready-chime player init failed — \(error)\n", stderr)
+            fputs("askami: ready-chime player init failed — \(error)\n", stderr)
             return
         }
-        player.volume = 0.3
+        player.volume = 0.8
         player.delegate = self
         self.player = player
         player.prepareToPlay()
         guard player.play() else {
-            fputs("justasec: ready-chime playback failed to start\n", stderr)
+            fputs("askami: ready-chime playback failed to start\n", stderr)
             finishPlayback()
             return
         }
@@ -76,7 +76,7 @@ extension AudioFeedback: AVAudioPlayerDelegate {
             guard self.playerID == pid else { return }
             self.finishPlayback()
             if !flag {
-                fputs("justasec: ready-chime playback finished with error\n", stderr)
+                fputs("askami: ready-chime playback finished with error\n", stderr)
             }
         }
     }
