@@ -583,12 +583,17 @@ func menuHasShortcutRow() {
 @Test("Shortcut row shows default shortcut initially")
 @MainActor
 func shortcutRowShowsDefault() {
+    UserDefaults.standard.removeObject(forKey: "askami_hotkey_key_code")
+    UserDefaults.standard.removeObject(forKey: "askami_hotkey_modifiers")
     let app = AskamiApp()
     app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: nil))
-    let expected = "Shortcut: \u{2303}\u{2325}Space"
-    let item = app.statusItem.menu?.item(withTitle: expected)
-    #expect(item != nil)
-    #expect(item?.keyEquivalent == "")
+    guard let menu = app.statusItem.menu else { #expect(Bool(false)); return }
+    let items = menu.items.filter { $0.title.hasPrefix("Shortcut:") }
+    #expect(items.count == 1)
+    #expect(items[0].title == "Shortcut: \(ShortcutValue.default.displayString)")
+    #expect(items[0].keyEquivalent == "")
+    #expect(!items[0].isEnabled)
+    #expect(items[0].action == nil)
 }
 
 @Test("Shortcut row is between Status and Settings in menu")
