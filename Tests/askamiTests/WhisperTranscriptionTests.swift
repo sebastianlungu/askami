@@ -63,7 +63,8 @@ private var testModelsDir: String {
         .appendingPathComponent("models/ggml-base-q5_1.bin").path
 }
 
-@Test("validate accepts loopback host")
+@Test("validate accepts loopback host",
+      .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/whisper-server") && FileManager.default.fileExists(atPath: testModelsDir)))
 func validateAcceptsLoopback() throws {
     let cfg = WhisperServerConfig(modelPath: testModelsDir)
     let proc = WhisperServerProcess(config: cfg)
