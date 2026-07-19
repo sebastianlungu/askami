@@ -62,12 +62,13 @@ func buildScriptBundlesModel() throws {
     #expect(script.contains("models/ggml-base-q5_1.bin"))
 }
 
-@Test("build script copies SNCF sonic logo MP3 and validates hash, no old WAV")
-func buildScriptCopiesSNCFMp3() throws {
+@Test("build script copies ready chime MP3 and validates hash")
+func buildScriptCopiesReadyChime() throws {
     let scriptURL = projectRoot.appending(path: "scripts/build.sh")
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
-    #expect(script.contains("sncf-sonic-logo.mp3"))
-    #expect(script.contains("734c2b87d5af6ae4949c9986f41681bfc098c5ecc3a10e2a37132e435d77da10"))
+    #expect(script.contains("ready-chime.mp3"))
+    #expect(script.contains("3244c21a0ff72ab70cc2438a22f5e5655f0b11586063e7dded14cae51a6c6ac8"))
+    #expect(!script.contains("sncf-sonic-logo.mp3"))
     #expect(!script.contains("success-chime.wav"))
     #expect(script.contains("shasum -a 256"))
 }

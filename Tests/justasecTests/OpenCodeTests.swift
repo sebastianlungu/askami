@@ -430,8 +430,8 @@ func openCodeParserRealWorldShape() {
 
 // MARK: - Full Response Parsing
 
-@Test("parseResponse detects the answer language instead of carrying input language through")
-func openCodeParseResponseDetectsAnswerLanguage() throws {
+@Test("parseResponse preserves Whisper's detected language")
+func openCodeParseResponsePreservesWhisperLanguage() throws {
     let stream = """
     {"type":"text","part":{"type":"text","text":"The capital of France is Paris."}}
     """
@@ -440,17 +440,17 @@ func openCodeParseResponseDetectsAnswerLanguage() throws {
         language: "french"
     )
     #expect(result.answer == "The capital of France is Paris.")
-    #expect(result.language == "en")
+    #expect(result.language == "french")
 }
 
-@Test("parseResponse detects Portuguese answer language")
-func openCodeParseResponseDetectsPortuguese() throws {
+@Test("parseResponse detects answer language when Whisper language is unavailable")
+func openCodeParseResponseDetectsLanguageWithoutWhisperLanguage() throws {
     let stream = """
     {"type":"text","part":{"type":"text","text":"A capital de Portugal é Lisboa."}}
     """
     let result = try OpenCodeClient.parseResponse(
         data: stream.data(using: .utf8)!,
-        language: "english"
+        language: nil
     )
     #expect(result.language == "pt")
 }

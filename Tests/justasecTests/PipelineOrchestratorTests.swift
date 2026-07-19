@@ -205,6 +205,35 @@ func silenceProducesError() async throws {
     #expect(orchestrator.stateMachine.state == .ready)
 }
 
+@Test("Whisper no-speech response uses recoverable silence path")
+@MainActor
+func noSpeechTranscriptionUsesSilenceRecovery() async throws {
+    let snapshotFake = SnapshotEngineFake()
+    snapshotFake.stubCaptureTime = CMTime(value: 16000, timescale: 16000)
+    snapshotFake.stubSnapshot = .success(makeTestWAV())
+
+    let transcriberFake = WhisperTranscriberFake()
+    transcriberFake.stubResult = .failure(.noSpeechDetected)
+    let speechFake = SpeechSynthesizerFake()
+    let orchestrator = PipelineOrchestrator(
+        dependencies: PipelineDependencies(
+            pipeline: .init(
+                snapshotEngine: snapshotFake,
+                transcriber: transcriberFake,
+                reasoner: OpenCodeClientFake()
+            ),
+            speech: speechFake,
+            feedback: .init()
+        )
+    )
+
+    try orchestrator.stateMachine.startupComplete()
+    await runPipeline(orchestrator)
+
+    #expect(speechFake.spokenTexts.map(\.0) == ["No speech detected."])
+    #expect(orchestrator.stateMachine.state == .ready)
+}
+
 // MARK: - Errors produce error speech
 
 @Test("transcription error produces error speech")

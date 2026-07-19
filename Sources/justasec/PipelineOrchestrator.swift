@@ -58,6 +58,8 @@ public final class PipelineOrchestrator {
             runner.log("justasec: time-to-speech \(String(format: "%.3f", elapsed))s\n")
 
             await self.speakOnMainWithFeedback(answer: answer, timings: timings, totalElapsed: elapsed)
+        } catch let error as WhisperTranscriptionError where error == .noSpeechDetected {
+            await self.speakOnMainWithRecovery(errorMessage: "No speech detected.", settle: 0.3)
         } catch let error as PipelineError where error == .silence {
             await self.speakOnMainWithRecovery(errorMessage: "No speech detected.", settle: 0.3)
         } catch {

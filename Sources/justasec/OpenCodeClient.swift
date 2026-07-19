@@ -291,9 +291,7 @@ public struct OpenCodeClient: Sendable {
             throw OpenCodeError.tooManySentences(sentenceCount)
         }
 
-        let wordCount = answer.split(whereSeparator: { $0.isWhitespace }).count
-        let shouldDetectLanguage = language == nil || wordCount >= 4
-        let resolvedLanguage = shouldDetectLanguage ? (detectLanguage(from: answer) ?? language) : language
+        let resolvedLanguage = language ?? detectLanguage(from: answer)
         return OpenCodeResult(answer: answer, language: resolvedLanguage)
     }
 
