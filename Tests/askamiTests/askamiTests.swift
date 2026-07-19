@@ -147,14 +147,7 @@ func installScriptHandlesSigningMigration() throws {
     #expect(script.contains("tccutil reset AudioCapture"))
 }
 
-@Test("sign skill delegates to the stable install workflow")
-func signSkillUsesInstallScript() throws {
-    let skillURL = projectRoot.appending(path: ".opencode/skills/sign/SKILL.md")
-    let skill = try String(contentsOf: skillURL, encoding: .utf8)
-    #expect(skill.contains("bash scripts/install.sh"))
-}
-
-@Test("validateDependencies succeeds with expected tools")
+@Test("validateDependencies succeeds with expected tools", .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode")))
 @MainActor
 func validateDependencies() {
     let app = AskamiApp()

@@ -4,7 +4,16 @@ import KokoroCoreML
 import os.lock
 
 public let defaultTTSVoice = "af_heart"
-public let espeakExecutablePath = "/opt/homebrew/bin/espeak-ng"
+public var espeakExecutablePath: String {
+    let defaultPath = "/opt/homebrew/bin/espeak-ng"
+    guard !FileManager.default.isExecutableFile(atPath: defaultPath) else { return defaultPath }
+    guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else { return defaultPath }
+    for dir in pathEnv.split(separator: ":") {
+        let candidate = "\(dir)/espeak-ng"
+        if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+    }
+    return defaultPath
+}
 
 /// CPU-only CoreML inference: ANE/E5RT emits a non-fatal shape fallback on this
 /// hardware; CPU output was verified byte-identical and faster in local probes.

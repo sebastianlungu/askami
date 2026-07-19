@@ -14,11 +14,15 @@ echo "=== askami setup ==="
 echo "--- Validating system dependencies ---"
 
 check_tool() {
-    local name="$1" path="$2" arg="$3"
+    local name="$1" default="$2" arg="$3"
+    local path="${!name:-$default}"
+    if ! command -v "$path" >/dev/null 2>&1; then
+        path="$(command -v "$name" 2>/dev/null || echo "$default")"
+    fi
     if "$path" "$arg" >/dev/null 2>&1; then
         echo "  [OK] $name: $path"
     else
-        echo "  [FAIL] $name: not found at $path"
+        echo "  [FAIL] $name: not found at $path (set env var or install)"
         return 1
     fi
 }
@@ -27,6 +31,7 @@ check_tool "swift" "/usr/bin/swift" "--version"
 check_tool "xcodebuild" "/usr/bin/xcodebuild" "-version"
 check_tool "opencode" "/opt/homebrew/bin/opencode" "--version"
 check_tool "whisper-server" "/opt/homebrew/bin/whisper-server" "--help"
+check_tool "espeak-ng" "/opt/homebrew/bin/espeak-ng" "--version"
 
 echo ""
 echo "--- Model setup ---"

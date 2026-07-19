@@ -1,7 +1,6 @@
 # Swift Package Manager
 .build/
-.build-arm64/
-.build-x86_64/
+.swiftpm/
 Packages/
 *.xcodeproj
 *.xcworkspace
@@ -10,15 +9,25 @@ Packages/
 *.app
 
 # Model files
-models/
+models/*
 !models/.gitkeep
 
 # macOS
 .DS_Store
+
+# Editor/IDE
 *.swp
 *.swo
 *~
+.vscode/
 
 # Build artifacts
 derived-data/
+
+# Environment
+.env
+.env.local
+
+# Local tooling
+.opencode/
 

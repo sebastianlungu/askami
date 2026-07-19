@@ -305,8 +305,9 @@ public final class AskamiApp: NSObject, NSApplicationDelegate {
     }
 
     private func checkToolAvailable(at path: String, with argument: String) -> Bool {
+        let resolved = resolveToolPath(path)
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
+        process.executableURL = URL(fileURLWithPath: resolved)
         process.arguments = [argument]
 
         let pipe = Pipe()
@@ -321,5 +322,16 @@ public final class AskamiApp: NSObject, NSApplicationDelegate {
         } catch {
             return false
         }
+    }
+
+    private func resolveToolPath(_ path: String) -> String {
+        guard !FileManager.default.isExecutableFile(atPath: path) else { return path }
+        let toolName = (path as NSString).lastPathComponent
+        guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else { return path }
+        for dir in pathEnv.split(separator: ":") {
+            let candidate = "\(dir)/\(toolName)"
+            if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+        }
+        return path
     }
 }
