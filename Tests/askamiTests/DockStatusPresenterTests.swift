@@ -118,6 +118,7 @@ func pulseIntervalIs500ms() {
 @MainActor
 func listeningStartsPulse() {
     let presenter = DockStatusPresenter()
+    presenter.readReduceMotion = { false }
     presenter.transition(to: .listening)
     #expect(presenter.isPulsing)
     #expect(presenter.pulseTask != nil)
@@ -127,6 +128,7 @@ func listeningStartsPulse() {
 @MainActor
 func leavingListeningStopsPulse() {
     let presenter = DockStatusPresenter()
+    presenter.readReduceMotion = { false }
     presenter.transition(to: .listening)
     #expect(presenter.pulseTask != nil)
     presenter.transition(to: .error)
@@ -138,6 +140,7 @@ func leavingListeningStopsPulse() {
 @MainActor
 func transitionToListeningReplacesTask() {
     let presenter = DockStatusPresenter()
+    presenter.readReduceMotion = { false }
     presenter.transition(to: .listening)
     #expect(presenter.pulseTask != nil)
     presenter.transition(to: .success)
@@ -150,6 +153,7 @@ func transitionToListeningReplacesTask() {
 @MainActor
 func rapidTransitionsLastTaskActive() {
     let presenter = DockStatusPresenter()
+    presenter.readReduceMotion = { false }
     presenter.transition(to: .listening)
     #expect(presenter.pulseTask != nil)
     presenter.transition(to: .error)
@@ -168,6 +172,7 @@ func rapidTransitionsLastTaskActive() {
 @MainActor
 func staleCallbacksNotApplied() throws {
     let presenter = DockStatusPresenter()
+    presenter.readReduceMotion = { false }
     presenter.transition(to: .listening)
     #expect(presenter.isPulsing)
     #expect(presenter.pulseTask != nil)
@@ -338,6 +343,7 @@ func deallocCancelsPulseTask() {
 @MainActor
 func cleanupStopsPulseAndCancelsObservation() {
     let presenter = DockStatusPresenter()
+    presenter.readReduceMotion = { false }
     presenter.transition(to: .listening)
     #expect(presenter.isPulsing)
     #expect(presenter.pulseTask != nil)

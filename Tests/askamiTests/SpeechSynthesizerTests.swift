@@ -60,7 +60,8 @@ func languageProfilesSelectVoiceAndPhonemizer() {
     #expect(french.espeakVoice == "fr-fr")
 }
 
-@Test("eSpeak phonemizes Portuguese without putting text in argv")
+@Test("eSpeak phonemizes Portuguese without putting text in argv",
+      .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/espeak-ng")))
 func espeakPhonemizesPortuguese() throws {
     let ipa = try ESpeakPhonemizer.phonemize(
         "A capital de Portugal é Lisboa.",

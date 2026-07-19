@@ -83,7 +83,8 @@ func modelResolvedAbsolute() {
     #expect(cfg.resolvedModelPath == "/absolute/path/model.bin")
 }
 
-@Test("resolved model path resolves relative path against cwd when no bundle")
+@Test("resolved model path resolves relative path against cwd when no bundle",
+      .enabled(if: FileManager.default.fileExists(atPath: testModelsDir)))
 func modelResolvedRelative() {
     globalStateLock.withLock {
         let cfg = WhisperServerConfig()
@@ -126,11 +127,10 @@ func modelResolvedCwdRoot() {
 
 // MARK: - Model Validation
 
-@Test("model validation passes on known-good model")
+@Test("model validation passes on known-good model",
+      .enabled(if: FileManager.default.fileExists(atPath: testModelsDir)))
 func modelValidationPasses() throws {
-    let modelPath = testModelsDir
-    try #require(FileManager.default.fileExists(atPath: modelPath))
-    try WhisperServerConfig.validateModel(at: modelPath)
+    try WhisperServerConfig.validateModel(at: testModelsDir)
 }
 
 @Test("model validation fails on missing file")
@@ -463,7 +463,7 @@ func processValidateExecutable() {
 @Test("process validates model file exists")
 func processValidateModel() {
     #expect(throws: WhisperTranscriptionError.modelNotFound) {
-        try WhisperServerProcess(config: WhisperServerConfig(modelPath: "/nonexistent/model.bin")).validate()
+        try WhisperServerProcess(config: WhisperServerConfig(executablePath: "/bin/bash", modelPath: "/nonexistent/model.bin")).validate()
     }
 }
 
@@ -776,9 +776,9 @@ func resultIsSendable() {
 
 // MARK: - Integration: Real server arguments
 
-@Test("process arguments are valid for real server")
-func processArgsRealServer() throws {
-    try #require(FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/whisper-server"))
+@Test("process arguments are valid for real server",
+      .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/whisper-server")))
+func processArgsRealServer() {
     let args = WhisperServerProcess.makeArguments(config: WhisperServerConfig())
     #expect(args.contains("--host"))
     #expect(args.contains("--port"))
@@ -786,9 +786,9 @@ func processArgsRealServer() throws {
     #expect(args.contains("-l") || args.contains("--language"))
 }
 
-@Test("real server help has expected options")
+@Test("real server help has expected options",
+      .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/whisper-server")))
 func realServerHelp() throws {
-    try #require(FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/whisper-server"))
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/whisper-server")
     proc.arguments = ["--help"]

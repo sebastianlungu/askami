@@ -781,11 +781,10 @@ func openCodeWebOnlyJSON() throws {
     #expect(!parsed.values.contains("ask"))
 }
 
-@Test("process environment includes OPENCODE_PERMISSION web-only")
-func openCodeEnvPermissionSet() throws {
-    try #require(FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode"))
+@Test("process environment includes OPENCODE_PERMISSION web-only",
+      .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode")))
+func openCodeEnvPermissionSet() {
     let client = OpenCodeClient()
-    // Create a process via internal mechanism to verify env
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/opencode")
     proc.arguments = ["run", "--pure", "--model", client.config.model, "--format", "json"]
@@ -1066,9 +1065,9 @@ func openCodeRealHelp() throws {
     #expect(proc.terminationStatus == 0)
 }
 
-@Test("real opencode: version is 1.18.3")
+@Test("real opencode: version is 1.18.3",
+      .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode")))
 func openCodeRealVersion() throws {
-    try #require(FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode"))
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/opencode")
     proc.arguments = ["--version"]
@@ -1081,9 +1080,9 @@ func openCodeRealVersion() throws {
     #expect(version == "1.18.3")
 }
 
-@Test("real opencode: pinned model is available")
+@Test("real opencode: pinned model is available",
+      .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode")))
 func openCodeRealModelAvailable() throws {
-    try #require(FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode"))
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/opencode")
     proc.arguments = ["models"]
@@ -1186,26 +1185,21 @@ func sigIgnInheritedByProcessChild() throws {
 
 // MARK: - Environment sentinel test
 
-@Test("unrelated sentinel secret is NOT forwarded (allowlist env)")
+@Test("unrelated sentinel secret is NOT forwarded (allowlist env)",
+      .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode")))
 func openCodeEnvSentinelExcluded() throws {
-    try #require(FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/opencode"))
     let sentinelKey = "ASKAMI_SENTINEL_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
     let sentinelValue = "super-secret-do-not-leak"
 
-    // Build child env via the production allowlist
     let env = OpenCodeClient.buildChildEnv()
     #expect(env[sentinelKey] == nil, "unrelated sentinel must NOT be forwarded")
 
-    // Verify sentinel is also excluded when constructing manually
     var full = ProcessInfo.processInfo.environment
     full["OPENCODE_PERMISSION"] = OpenCodeClient.webOnlyPermissionJSON
     full[sentinelKey] = sentinelValue
-    // Re-run allowlist filtering
-    // (This tests that a sentinel in the manual path would also be caught)
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/opencode")
     proc.arguments = ["run", "--pure", "--model", OpenCodeConfig().model, "--format", "json"]
-    // Use the production code path
     proc.environment = OpenCodeClient.buildChildEnv()
     #expect(proc.environment?[sentinelKey] == nil, "sentinel must be excluded by allowlist")
 }
